@@ -48,9 +48,9 @@ func FragmentIPSegment(packet gopacket.Packet, fragSize uint16) []gopacket.Packe
 	}
 
 	if ipv4, _ := netLayer.(*layers.IPv4); ipv4 != nil {
-		return FragmentIPv4Segment(packet, fragSize)
+		return fragmentIPv4Segment(packet, fragSize)
 	} else if ipv6, _ := netLayer.(*layers.IPv6); ipv6 != nil {
-		return FragmentIPv4Segment(packet, fragSize)
+		return fragmentIPv4Segment(packet, fragSize)
 	}
 
 	// This was neither IPv4 nor IPv6 (somehow?), so just pass it through
@@ -58,7 +58,7 @@ func FragmentIPSegment(packet gopacket.Packet, fragSize uint16) []gopacket.Packe
 	return []gopacket.Packet{packet}
 }
 
-func FragmentIPv4Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Packet {
+func fragmentIPv4Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Packet {
 	// corner case: if offset is 0 (Geneva calls "offset" the "fragsize"), then just return the original
 	// packet.
 	if fragSize == 0 {
@@ -148,7 +148,7 @@ func ComputeIPv4Checksum(header []byte) uint16 {
 	return uint16(^chksum)
 }
 
-func FragmentIPv4SegmentOld(packet gopacket.Packet, offset int) []gopacket.Packet {
+func fragmentIPv4SegmentOld(packet gopacket.Packet, offset int) []gopacket.Packet {
 	offset -= offset % 8
 	payload := packet.NetworkLayer().LayerPayload()
 	buf := gopacket.NewSerializeBuffer()
@@ -196,7 +196,7 @@ func FragmentIPv4SegmentOld(packet gopacket.Packet, offset int) []gopacket.Packe
 	return []gopacket.Packet{first, second}
 }
 
-func FragmentIPv6Segment(data []byte, offset int) []gopacket.Packet {
+func fragmentIPv6Segment(data []byte, offset int) []gopacket.Packet {
 	return nil
 }
 

@@ -1,0 +1,60 @@
+_alpha : 'a'-'z' | 'A'-'Z' ;
+_alnum : _alpha | '0'..'9' ;
+_number : [ '-' ] '1'..'9' { '0'..'9' } ;
+field : _alnum | { _alnum | '-' } ;
+value : _alnum ;
+offset : _number ;
+!whitespace : ' ' | '\t' | '\r' | '\n' ;
+
+Strategy : Forest "\\/" Forest ;
+
+Forest : Forest ActionTree
+       | empty
+       ;
+
+ActionTree : Trigger "-" Action "-|" ;
+
+Trigger : "[" Proto ":" field ":" value "]" ;
+
+Proto : "IP"
+      | "ip"
+      | "TCP"
+      | "tcp" ;
+
+Action : Duplicate
+       | Fragment
+       | Tamper
+       | Drop
+       | Send
+       | empty
+       ;
+ done
+Duplicate : "duplicate(" Action "," Action ")" ; done
+
+Fragment : "fragment" FragmentRule
+         | "fragment" FragmentRule "(" Action "," Action ")"
+         ;
+
+FragmentRule : "{" Proto ":" offset ":" InOrder "}" ;
+
+InOrder : "True"
+        | "False"
+        ;
+
+Tamper : "tamper" TamperRule
+       | "tamper" TamperRule "(" Action "," Action ")"
+       ;
+
+TamperRule : "{" Proto ":" field ":" TamperMode "}" ;
+
+TamperMode : Replace
+           | Corrupt
+           ;
+
+Replace : "replace:" value ;
+
+Corrupt : "corrupt" ;
+
+Drop : "drop" ; done
+
+Send : "send" ; done

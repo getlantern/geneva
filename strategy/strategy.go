@@ -32,10 +32,13 @@ import (
 	"github.com/Crosse/geneva/internal/scanner"
 )
 
+// Forest refers to an ordered list of (trigger, action tree) pairs.
+type Forest []*actions.ActionTree
+
 // Strategy is the top-level Geneva construct that describes potential inbound and outbound changes to packets.
 type Strategy struct {
-	Inbound  []*actions.ActionTree
-	Outbound []*actions.ActionTree
+	Inbound  Forest
+	Outbound Forest
 }
 
 // ParseStrategy parses a string representation of a strategy into the actual Strategy object.

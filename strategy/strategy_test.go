@@ -1,6 +1,7 @@
 package strategy_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/Crosse/geneva/strategy"
@@ -43,4 +44,17 @@ func TestStrategyMultipleActionTrees(t *testing.T) {
 		t.Errorf("strategy should have 2 outbound action trees, but has %d", len(st.Outbound))
 	}
 	t.Log(st)
+}
+
+func ExampleParseStrategy() {
+	str := `
+[TCP:flags:SA]-duplicate(send,send)-|
+[TCP:flags:PA]-duplicate(duplicate(send,drop),send)-|
+\/
+[TCP:flags:S]-send-|`
+
+	s, _ := strategy.ParseStrategy(str)
+
+	fmt.Printf("%s", s)
+	// Output: [TCP:flags:SA]-duplicate(send,send)-| [TCP:flags:PA]-duplicate(duplicate(send,drop),send)-| \/ [TCP:flags:S]-send-|
 }

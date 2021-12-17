@@ -32,6 +32,7 @@ import (
 
 	"github.com/Crosse/geneva/actions"
 	"github.com/Crosse/geneva/internal/scanner"
+	"github.com/google/gopacket"
 )
 
 // Forest refers to an ordered list of (trigger, action tree) pairs.
@@ -41,6 +42,48 @@ type Forest []*actions.ActionTree
 type Strategy struct {
 	Inbound  Forest
 	Outbound Forest
+}
+
+// Direction is the direction of a packet: either inbound (ingress) or outbound (egress).
+type Direction int
+
+const (
+	// DirectionInbound indicates a packet received from a remote host (i.e., inbound or ingress traffic).
+	DirectionInbound Direction = iota
+	// DirectionOutbound indicates a packet to be sent to a remote host (i.e., outbound or egress traffic).
+	DirectionOutbound
+)
+
+// Apply applies the strategy to a given packet.
+func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Packet, error) {
+	if dir == DirectionInbound && s.Inbound == nil {
+		return []gopacket.Packet{packet}, nil
+	} else if dir == DirectionOutbound && s.Outbound == nil {
+		return []gopacket.Packet{packet}, nil
+	}
+
+	var forest Forest
+	if dir == DirectionInbound {
+		forest = s.Inbound
+	} else {
+		forest = s.Outbound
+	}
+
+	packets := make([]gopacket.Packet, 2)
+
+	// XXX: here's the thing: the paper mentions that each action tree in a forest gets "its own fresh copy of the
+	// original packet", so we should either copy it here before giving it to each action tree, or ensure that any
+	// action that modifies the packet makes a copy first. The former would be easier to implement, while the latter
+	// could potentially keep the number of memcpy() operations down by lazily copying only when required.
+	for i, at := range forest {
+		if m, err := at.Matches(packet); err != nil {
+			return nil, fmt.Errorf("error matching action tree %d: %v", i, err)
+		} else if m {
+			packets = append(packets, at.Apply(packet)...)
+		}
+	}
+
+	return packets, nil
 }
 
 // ParseStrategy parses a string representation of a strategy into the actual Strategy object.

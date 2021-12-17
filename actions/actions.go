@@ -21,6 +21,21 @@ type ActionTree struct {
 	RootAction Action
 }
 
+// String returns a string representation of this ActionTree.
+func (at *ActionTree) String() string {
+	return fmt.Sprintf("%s-%s-|", at.Trigger, at.RootAction)
+}
+
+// Matches returns whether this action tree's trigger matches the packet.
+func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
+	return at.Trigger.Matches(packet)
+}
+
+// Apply applies this action tree to the packet, returning zero or more potentially-modified packets.
+func (at *ActionTree) Apply(packet gopacket.Packet) []gopacket.Packet {
+	return at.RootAction.Apply(packet)
+}
+
 // ParseActionTree attempts to parse an action tree from its input.
 func ParseActionTree(s *scanner.Scanner) (*ActionTree, error) {
 	trigger, err := triggers.ParseTrigger(s)
@@ -43,11 +58,6 @@ func ParseActionTree(s *scanner.Scanner) (*ActionTree, error) {
 	}
 
 	return at, nil
-}
-
-// String returns a string representation of this ActionTree.
-func (at *ActionTree) String() string {
-	return fmt.Sprintf("%s-%s-|", at.Trigger, at.RootAction)
 }
 
 // Action is implemented by any value that describes a Geneva action.

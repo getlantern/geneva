@@ -2,14 +2,19 @@ package actions
 
 import "github.com/google/gopacket"
 
+// DropAction is a Geneva action that drops a packet.
 type DropAction struct{}
 
+// Apply drops the given packet.
 func (a *DropAction) Apply(packet gopacket.Packet) []gopacket.Packet {
 	return []gopacket.Packet{}
 }
 
+// String returns a string representing the "drop" action.
 func (a *DropAction) String() string {
 	return "drop"
 }
 
-var DefaultDropAction Action = &DropAction{}
+// DefaultDropAction is the default drop action.
+// (DropAction is so simple that there is no need to allocate more than one.)
+var DefaultDropAction *DropAction = &DropAction{}

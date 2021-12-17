@@ -1,3 +1,26 @@
+// A Geneva strategy consists of zero or more action trees that can be applied to inbound or outbound packets. The
+// actions trees encode what actions to take on a packet. A strategy, conceptually, looks like this:
+//
+//  inbound \/ outbound
+//
+// "inbound" and "outbound" are ordered lists of (trigger, action tree) pairs. The Geneva paper calls these ordered
+// lists "forests". The inbound and outbound forests are separated by the "\/" characters; if the strategy omits one or
+// the other, then that side of the "\/" is left empty. For example, a strategy that only includes an inbound forest
+// would take the form "inbound \/", whereas an outbound-only strategy would be "\/ outbound".
+//
+// A real example, taken from https://geneva.cs.umd.edu/papers/geneva_ccs19.pdf (pg 2202), would look like this:
+//
+//  [TCP:flags:S]-
+//     duplicate(
+//        tamper{TCP:flags:replace:SA}(
+//           send),
+//         send)-| \/
+//  [TCP:flags:R]-drop-|
+//
+// In this example, the inbound forest would trigger on TCP packets that have just the SYN flag set, and would
+// perform a few different actions on those packets. The outbound forest would only apply to TCP packets with the
+// RST flag set, and would simply drop them. Each of the forests in the example are made up of a single (trigger, action
+// tree) pair.
 package strategy
 
 import (
@@ -9,11 +32,14 @@ import (
 	"github.com/Crosse/geneva/internal/scanner"
 )
 
+// Strategy is the top-level Geneva construct that describes potential inbound and outbound changes to packets.
 type Strategy struct {
 	Inbound  []*actions.ActionTree
 	Outbound []*actions.ActionTree
 }
 
+// ParseStrategy parses a string representation of a strategy into the actual Strategy object.
+// If the string is malformed, and error will be returned instead.
 func ParseStrategy(strategy string) (*Strategy, error) {
 	// inbound-tree \/ outbound-tree
 	l := scanner.NewScanner(strings.TrimSpace(strategy))
@@ -60,6 +86,7 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 	return st, nil
 }
 
+// String returns a string representation of this strategy.
 func (s *Strategy) String() string {
 	var inbound, outbound []string
 	for _, st := range s.Inbound {

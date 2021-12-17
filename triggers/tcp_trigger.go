@@ -7,8 +7,10 @@ import (
 	_ "github.com/google/gopacket/layers"
 )
 
+// TCPField is the type of a supported TCP field.
 type TCPField int
 
+// TCPFields returns a list of the fields supported by the TCP trigger.
 func TCPFields() []string {
 	return []string{
 		"sport",
@@ -36,6 +38,7 @@ func TCPFields() []string {
 	}
 }
 
+// ParseTCPField parses a field name and returns an TCPField, or an error if the field is not supported.
 func ParseTCPField(field string) (TCPField, error) {
 	for i, v := range TCPFields() {
 		if field == v {
@@ -45,12 +48,14 @@ func ParseTCPField(field string) (TCPField, error) {
 	return TCPField(0), fmt.Errorf("invalid field name")
 }
 
+// TCPTrigger is a Trigger that matches on the TCP layer.
 type TCPTrigger struct {
 	field TCPField
 	value string
 	gas   int
 }
 
+// String returns a string representation of this trigger.
 func (t *TCPTrigger) String() string {
 	gas := ""
 	if t.gas > 0 {
@@ -59,22 +64,27 @@ func (t *TCPTrigger) String() string {
 	return fmt.Sprintf("[%s:%s:%s%s]", t.Protocol(), t.Field(), t.value, gas)
 }
 
+// Protocol is the protocol that this trigger can act upon.
 func (t *TCPTrigger) Protocol() string {
 	return "TCP"
 }
 
+// Field is an TCP-specific field name used by this trigger.
 func (t *TCPTrigger) Field() string {
 	return TCPFields()[t.field]
 }
 
+// Gas denotes how many times this trigger can fire before it stops triggering.
 func (t *TCPTrigger) Gas() int {
 	return t.gas
 }
 
+// Matches returns whether the trigger matches the packet.
 func (t *TCPTrigger) Matches(gopacket.Packet) (bool, error) {
 	return false, nil
 }
 
+// NewTCPTrigger creates a new TCP trigger.
 func NewTCPTrigger(field, value string, gas int) (*TCPTrigger, error) {
 	if field == "" {
 		return nil, fmt.Errorf("invalid field")

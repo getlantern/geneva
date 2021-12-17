@@ -6,11 +6,18 @@ import (
 	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/Crosse/geneva/triggers"
 	"github.com/google/gopacket"
-	_ "github.com/google/gopacket/layers"
+	_ "github.com/google/gopacket/layers" // gopacket best practice
 )
 
+// ActionTree represents a Geneva (trigger, action) pair.
+//
+// Technically, Geneva uses the term "action tree" to refer to the tree of actions in the tuple (trigger, action
+// tree). In other words, RootAction here is what they call the "action tree". They have no name for the (trigger,
+// action tree) tuple, which this type actually represents.
 type ActionTree struct {
-	Trigger    triggers.Trigger
+	// Trigger is the trigger that will fire this action tree if matched.
+	Trigger triggers.Trigger
+	// RootAction is the root action of the tree and may have subordinate actions that it calls.
 	RootAction Action
 }
 

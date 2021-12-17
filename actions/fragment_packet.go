@@ -69,7 +69,7 @@ func FragmentIPSegment(packet gopacket.Packet, fragSize uint16) []gopacket.Packe
 	if ipv4, _ := netLayer.(*layers.IPv4); ipv4 != nil {
 		return fragmentIPv4Segment(packet, fragSize)
 	} else if ipv6, _ := netLayer.(*layers.IPv6); ipv6 != nil {
-		return fragmentIPv4Segment(packet, fragSize)
+		return fragmentIPv6Segment(packet, fragSize)
 	}
 
 	// This was neither IPv4 nor IPv6 (somehow?), so just pass it through
@@ -170,7 +170,7 @@ func ComputeIPv4Checksum(header []byte) uint16 {
 	return chksum16
 }
 
-func fragmentIPv6Segment(data []byte, offset int) []gopacket.Packet {
+func fragmentIPv6Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Packet {
 	return nil
 }
 

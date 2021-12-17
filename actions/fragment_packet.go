@@ -93,8 +93,7 @@ func fragmentIPv4Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Pac
 	flagsAndFrags := (binary.BigEndian.Uint16(buf[6:]) | 0x20) & 0xe0
 	binary.LittleEndian.PutUint16(buf[6:], flagsAndFrags)
 
-	chksum := ComputeIPv4Checksum(buf[:hdrLen])
-	binary.BigEndian.PutUint16(buf[10:], chksum)
+	ComputeIPv4Checksum(buf[:hdrLen])
 
 	// slice off everything past the first fragment's end
 	buf = buf[:hdrLen+fragSize]
@@ -114,8 +113,7 @@ func fragmentIPv4Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Pac
 	flagsAndFrags = (binary.BigEndian.Uint16(buf[6:]) & 0x40) + (fragSize / 8)
 	binary.BigEndian.PutUint16(buf[6:], flagsAndFrags)
 
-	chksum = ComputeIPv4Checksum(buf[:hdrLen])
-	binary.BigEndian.PutUint16(buf[10:], chksum)
+	ComputeIPv4Checksum(buf[:hdrLen])
 
 	second := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
 
@@ -145,7 +143,10 @@ func ComputeIPv4Checksum(header []byte) uint16 {
 	for chksum > 0xffff {
 		chksum = (chksum & 0xffff) + (chksum >> 16)
 	}
-	return uint16(^chksum)
+
+	chksum16 := uint16(^chksum)
+	binary.BigEndian.PutUint16(header[10:], chksum16)
+	return chksum16
 }
 
 func fragmentIPv4SegmentOld(packet gopacket.Packet, offset int) []gopacket.Packet {

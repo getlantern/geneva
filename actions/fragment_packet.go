@@ -32,21 +32,24 @@ type FragmentAction struct {
 
 // Apply applies this action to the given packet.
 func (a *FragmentAction) Apply(packet gopacket.Packet) []gopacket.Packet {
-	/*
-	   - IP
-	     - check whether the DF bit is set and unset it
-	     - change total length field to fragment size
-	     - set MF on first fragment, clear on second
-	     - set the fragment offset field (0 for first, calculated for second)
-	     - recompute header checksum
-	*/
+	var packets []gopacket.Packet
+
 	switch a.Proto {
 	case "IP":
-		return FragmentIPSegment(packet, a.FragSize)
+		packets = FragmentIPSegment(packet, a.FragSize)
 	default:
 		/// TODO: log this and return the packet instead of panicking
+		packets = fragmentIPv6Segment(packet, a.FragSize)
 		panic(fmt.Sprintf("%s is unimplemented", a.Proto))
 	}
+
+	if !a.InOrder {
+		packets = []gopacket.Packet{packets[1], packets[0]}
+	}
+
+	result := a.FirstFragmentAction.Apply(packets[0])
+	result = append(result, a.SecondFragmentAction.Apply(packets[1])...)
+	return result
 }
 
 // FragmentIPSegment will fragment an dIPv4 or IPv6 segment into two segments at the given offset.

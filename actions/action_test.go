@@ -1,6 +1,7 @@
 package actions_test
 
 import (
+	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -28,6 +29,28 @@ var (
 		0x38, 0x2e, 0x31, 0x0d, 0x0a,
 	}
 )
+
+func TestIPv4HeaderChecksum(t *testing.T) {
+	// This comes straight from https://en.wikipedia.org/wiki/IPv4_header_checksum
+	header := []byte{
+		0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0xb8, 0x61, 0xc0, 0xa8, 0x00, 0x01, 0xc0,
+		0xa8, 0x00, 0xc7,
+	}
+	expected := uint16(0xb861)
+
+	chksum := actions.ComputeIPv4Checksum(header)
+	if chksum != expected {
+		t.Fatalf("expected %#04x, got %#04x", expected, chksum)
+	}
+
+	if val := binary.BigEndian.Uint16(header[10:]); val != expected {
+		t.Fatalf("expected %#04x in header, got %#04x", expected, val)
+	}
+
+	if !actions.VerifyIPv4Checksum(header) {
+		t.Fatal("checksum validation failed")
+	}
+}
 
 func TestSendAction(t *testing.T) {
 	pkt := gopacket.NewPacket(ping, layers.LayerTypeEthernet, gopacket.Default)
@@ -126,98 +149,59 @@ func TestFragmentAction(t *testing.T) {
 
 	result := a.Apply(pkt)
 	if len(result) != 2 {
-		t.Fatalf("expected 2 packets got %d", len(result))
-	}
-	t.Log(result[0].Dump())
-	t.Log(result[1].Dump())
-
-	p1Logged, p2Logged := false, false
-
-	layer := result[0].NetworkLayer().(*layers.IPv4)
-	if layer.Checksum == pktIPv4Layer.Checksum {
-		if !p1Logged {
-			t.Log(result[0].Dump())
-			p1Logged = true
-		}
-		t.Errorf("checksum of first fragment is the same as the original packet (0x%x)", layer.Checksum)
+		t.Fatalf("expected 2 packets, but got %d", len(result))
 	}
 
-	frag1ExpectedLen := uint16(pktIPv4Layer.IHL*4) + fragSize
-	if layer.Length != frag1ExpectedLen {
-		if !p1Logged {
-			t.Log(result[0].Dump())
-			p1Logged = true
-		}
-		t.Errorf("fragment 1 total length: expected %d, got %d", frag1ExpectedLen, layer.Length)
+	expected := []struct {
+		packetDumpLogged bool
+		frag             gopacket.Packet
+		len              uint16
+		moreFragments    layers.IPv4Flag
+		fragOffset       uint16
+	}{
+		{false, result[0], uint16(pktIPv4Layer.IHL*4) + fragSize, 1, 0},
+		{false, result[1], uint16(len(pktIPv4Layer.Payload)) - fragSize, 0, (fragSize - (fragSize % 8)) / 8},
 	}
 
-	if layer.Flags&layers.IPv4MoreFragments == 0 {
-		if !p1Logged {
-			t.Log(result[0].Dump())
-			p1Logged = true
+	for i, e := range expected {
+		// this is just so that we only print out the packet dump once--instead of every time an error
+		// occurs--and only if we actually encounter an error.
+		dump := func() {
+			if !e.packetDumpLogged {
+				t.Log(e.frag.Dump())
+				e.packetDumpLogged = true
+			}
 		}
-		t.Error("More Fragments flag was not set on first fragment")
-	}
-	if layer.FragOffset != 0 {
-		if !p1Logged {
-			t.Log(result[0].Dump())
-			p1Logged = true
-		}
-		t.Errorf("first fragment's offset should be 0, but got %d", layer.FragOffset)
-	}
 
-	if !actions.VerifyIPv4Checksum(layer.Contents) {
-		if !p1Logged {
-			t.Log(result[0].Dump())
-			p1Logged = true
+		if l := e.frag.ErrorLayer(); l != nil {
+			t.Fatalf("failed to decode fragment %d: %v", i, l.Error())
 		}
-		t.Errorf("first fragment's checksum is invalid: %#04x", layer.Checksum)
-	}
 
-	// time to test fragment 2
+		layer := e.frag.NetworkLayer().(*layers.IPv4)
+		if layer.Checksum == pktIPv4Layer.Checksum {
+			dump()
+			t.Errorf("checksum of fragment %d is the same as the original packet (0x%x)", i, layer.Checksum)
+		}
 
-	layer = result[1].NetworkLayer().(*layers.IPv4)
-	if layer.Checksum == pktIPv4Layer.Checksum {
-		if !p2Logged {
-			t.Log(result[1].Dump())
-			p2Logged = true
+		if layer.Length != e.len {
+			dump()
+			t.Errorf("fragment %d total length: expected %d, got %d", i, e.len, layer.Length)
 		}
-		t.Errorf("checksum of second fragment is the same as the original packet (0x%x)", layer.Checksum)
-	}
-	if layer.Flags&layers.IPv4MoreFragments != 0 {
-		if !p2Logged {
-			t.Log(result[1].Dump())
-			p2Logged = true
-		}
-		t.Error("More Fragments flag was set on second fragment")
-	}
 
-	fragOffset := (fragSize - (fragSize % 8)) / 8
-	if layer.FragOffset != fragOffset {
-		if !p2Logged {
-			t.Log(result[1].Dump())
-			p2Logged = true
+		if mf := layer.Flags & layers.IPv4MoreFragments; mf != e.moreFragments {
+			dump()
+			t.Errorf("More Fragments flag of fragment %d: expected %d, got %d", i, e.moreFragments, mf)
 		}
-		t.Errorf("second fragment's offset should be %d, but got %d",
-			fragOffset, layer.FragOffset)
-	}
 
-	frag2ExpectedLen := uint16(len(pktIPv4Layer.Payload)) - fragSize
-	if layer.Length != frag2ExpectedLen {
-		if !p2Logged {
-			t.Log(result[1].Dump())
-			p2Logged = true
+		if layer.FragOffset != e.fragOffset {
+			dump()
+			t.Errorf("fragment %d offset: expected %d, got %d", i, e.fragOffset, layer.FragOffset)
 		}
-		t.Errorf("second fragment's offset should be %d, but got %d (total len %d)",
-			frag2ExpectedLen, layer.FragOffset, len(ssh))
-	}
 
-	if !actions.VerifyIPv4Checksum(layer.Contents) {
-		if !p2Logged {
-			t.Log(result[1].Dump())
-			p2Logged = true
+		if !actions.VerifyIPv4Checksum(layer.Contents) {
+			dump()
+			t.Errorf("fragment %d checksum is invalid: %#04x", i, layer.Checksum)
 		}
-		t.Errorf("second fragment's checksum is invalid: %#04x", layer.Checksum)
 	}
 }
 

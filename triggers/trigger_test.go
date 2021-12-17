@@ -136,3 +136,17 @@ func TestInvalidIPField(t *testing.T) {
 		t.Fatalf("expected field error")
 	}
 }
+
+func ExampleNewIPTrigger() {
+	t, _ := triggers.NewIPTrigger("ttl", "64", 0)
+
+	fmt.Printf("%s", t)
+	// Output: [IP:ttl:64]
+}
+
+func ExampleNewTCPTrigger() {
+	t, _ := triggers.NewTCPTrigger("flags", "SA", 0)
+
+	fmt.Printf("%s", t)
+	// Output: [TCP:flags:SA]
+}

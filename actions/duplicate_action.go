@@ -7,6 +7,7 @@ import (
 	"github.com/google/gopacket"
 )
 
+// DuplicateAction is a Geneva action that duplicates a packet and applies separate action trees to each.
 type DuplicateAction struct {
 	Left  Action
 	Right Action
@@ -17,14 +18,20 @@ func duplicatePacket(packet gopacket.Packet, leftAction, rightAction Action) []g
 	return append(packets, rightAction.Apply(packet)...)
 }
 
+// Apply duplicates packet, returning zero or more potentially-modified packets.
+//
+// The number of returned packets depends on this action's sub-actions.
 func (a *DuplicateAction) Apply(packet gopacket.Packet) []gopacket.Packet {
 	return duplicatePacket(packet, a.Left, a.Right)
 }
 
+// String returns a string representation of this Action.
 func (a *DuplicateAction) String() string {
 	return fmt.Sprintf("duplicate(%s,%s)", a.Left, a.Right)
 }
 
+// ParseDuplicateAction parses a string representation of a "duplicate" action.
+// If the string is malformed, and error will be returned instead.
 func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 	var err error
 

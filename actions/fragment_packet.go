@@ -11,14 +11,26 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+// FragmentAction is a Geneva action that splits a packet into two fragments and applies separate action trees to each.
+//
+// As an example, if Proto is "IP" and FragSize is 8, this will fragment a 60-byte IP segment into two fragments: the
+// first will contain the first eight bytes of the original segment's payload, and the second will contain the remaining
+// 52 bytes.  Each fragment will retain the original header (modulo the fields that must be updated to mark it as a
+// fragmented segment). If the Proto's header includes a checksum, it will be recomputed.
 type FragmentAction struct {
-	Proto                string
-	FragSize             uint16
-	InOrder              bool
-	FirstFragmentAction  Action
+	// Proto is the protocol layer where the packet will be fragmented.
+	Proto string
+	// FragSize is the offset into the protocol's payload where fragmentation will happen.
+	FragSize uint16
+	// InOrder specifies whether to return the fragments in order.
+	InOrder bool
+	// FirstFragmentAction is the action to apply to the first fragment.
+	FirstFragmentAction Action
+	// SecondFragmentAction is the action to apply to the second fragment.
 	SecondFragmentAction Action
 }
 
+// Apply applies this action to the given packet.
 func (a *FragmentAction) Apply(packet gopacket.Packet) []gopacket.Packet {
 	/*
 	   - IP
@@ -37,6 +49,10 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) []gopacket.Packet {
 	}
 }
 
+// FragmentIPSegment will fragment an dIPv4 or IPv6 segment into two segments at the given offset.
+//
+// The first fragment will include up to fragSize bytes of the IP segment's payload, and the second fragment will
+// include the rest.
 func FragmentIPSegment(packet gopacket.Packet, fragSize uint16) []gopacket.Packet {
 	fragSize -= fragSize % 8
 
@@ -120,6 +136,7 @@ func fragmentIPv4Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Pac
 	return []gopacket.Packet{first, second}
 }
 
+// VerifyIPv4Checksum verifies whether an IPv4 header's checksum field is correct.
 func VerifyIPv4Checksum(header []byte) bool {
 	chksum := uint32(0)
 	for i := 0; i < len(header); i += 2 {
@@ -132,6 +149,7 @@ func VerifyIPv4Checksum(header []byte) bool {
 	return uint16(^chksum) == 0
 }
 
+// ComputeIPv4Checksum computes a new checksum for the given IPv4 header and writes it into the header.
 func ComputeIPv4Checksum(header []byte) uint16 {
 	// zero out the old checksum
 	binary.BigEndian.PutUint16(header[10:], 0)
@@ -201,6 +219,7 @@ func fragmentIPv6Segment(data []byte, offset int) []gopacket.Packet {
 	return nil
 }
 
+// String returns a string representation of this Action.
 func (a *FragmentAction) String() string {
 	return fmt.Sprintf("fragment{%s:%d:%t}}(%s,%s)",
 		a.Proto, a.FragSize, a.InOrder,
@@ -208,6 +227,8 @@ func (a *FragmentAction) String() string {
 		a.SecondFragmentAction)
 }
 
+// ParseFragmentAction parses a string representation of a "fragment" action.
+// If the string is malformed, and error will be returned instead.
 func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	if _, err := s.Expect("fragment{"); err != nil {
 		return nil, fmt.Errorf("invalid fragment rule: %v", err)

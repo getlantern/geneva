@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/google/gopacket"
-	_ "github.com/google/gopacket/layers"
+	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
 )
 
 // IPField is the type of a supported IP field.
@@ -81,9 +81,10 @@ func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
 		return nil, fmt.Errorf("invalid field value")
 	}
 
-	if f, err := ParseIPField(field); err != nil {
+	f, err := ParseIPField(field)
+	if err != nil {
 		return nil, err
-	} else {
-		return &IPTrigger{f, value, gas}, nil
 	}
+
+	return &IPTrigger{f, value, gas}, nil
 }

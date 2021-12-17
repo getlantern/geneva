@@ -7,7 +7,7 @@ import (
 
 	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/google/gopacket"
-	_ "github.com/google/gopacket/layers"
+	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
 )
 
 // Trigger is implemented by any value that describes a Geneva trigger.

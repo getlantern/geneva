@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/google/gopacket"
-	_ "github.com/google/gopacket/layers"
+	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
 )
 
 // TCPField is the type of a supported TCP field.
@@ -94,9 +94,10 @@ func NewTCPTrigger(field, value string, gas int) (*TCPTrigger, error) {
 		return nil, fmt.Errorf("invalid value")
 	}
 
-	if f, err := ParseTCPField(field); err != nil {
+	f, err := ParseTCPField(field)
+	if err != nil {
 		return nil, err
-	} else {
-		return &TCPTrigger{f, value, gas}, nil
 	}
+
+	return &TCPTrigger{f, value, gas}, nil
 }

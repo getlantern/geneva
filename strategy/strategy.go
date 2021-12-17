@@ -1,3 +1,5 @@
+// Package strategy provides types and functions for creating Geneva strategies.
+//
 // A Geneva strategy consists of zero or more action trees that can be applied to inbound or outbound packets. The
 // actions trees encode what actions to take on a packet. A strategy, conceptually, looks like this:
 //

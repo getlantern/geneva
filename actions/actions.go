@@ -3,7 +3,7 @@ package actions
 import (
 	"fmt"
 
-	"github.com/Crosse/geneva/internal/lexer"
+	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/Crosse/geneva/triggers"
 	"github.com/google/gopacket"
 	_ "github.com/google/gopacket/layers"
@@ -14,24 +14,24 @@ type ActionTree struct {
 	RootAction Action
 }
 
-func ParseActionTree(l *lexer.Lexer) (*ActionTree, error) {
-	trigger, err := triggers.ParseTrigger(l)
+func ParseActionTree(s *scanner.Scanner) (*ActionTree, error) {
+	trigger, err := triggers.ParseTrigger(s)
 	if err != nil {
 		return nil, err
 	}
 
 	at := &ActionTree{trigger, nil}
 
-	if _, err := l.Expect("-"); err != nil {
+	if _, err := s.Expect("-"); err != nil {
 		return nil, err
 	}
 
-	at.RootAction, err = ParseAction(l)
+	at.RootAction, err = ParseAction(s)
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := l.Expect("-|"); err != nil {
+	if _, err := s.Expect("-|"); err != nil {
 	}
 
 	return at, nil
@@ -46,22 +46,22 @@ type Action interface {
 	fmt.Stringer
 }
 
-func ParseAction(l *lexer.Lexer) (Action, error) {
-	if l.FindToken("duplicate", true) {
-		return ParseDuplicateAction(l)
+func ParseAction(s *scanner.Scanner) (Action, error) {
+	if s.FindToken("duplicate", true) {
+		return ParseDuplicateAction(s)
 	}
-	if l.FindToken("fragment", true) {
-		return ParseFragmentAction(l)
+	if s.FindToken("fragment", true) {
+		return ParseFragmentAction(s)
 	}
-	if l.FindToken("tamper", true) {
+	if s.FindToken("tamper", true) {
 		return nil, fmt.Errorf("tamper action not yet implemented")
 	}
-	if l.FindToken("drop", true) {
-		l.Advance(4)
+	if s.FindToken("drop", true) {
+		s.Advance(4)
 		return DefaultDropAction, nil
 	}
-	if l.FindToken("send", true) {
-		l.Advance(4)
+	if s.FindToken("send", true) {
+		s.Advance(4)
 		return DefaultSendAction, nil
 	}
 

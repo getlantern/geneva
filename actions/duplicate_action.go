@@ -3,7 +3,7 @@ package actions
 import (
 	"fmt"
 
-	"github.com/Crosse/geneva/internal/lexer"
+	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/google/gopacket"
 )
 
@@ -25,35 +25,35 @@ func (a *DuplicateAction) String() string {
 	return fmt.Sprintf("duplicate(%s,%s)", a.Left, a.Right)
 }
 
-func ParseDuplicateAction(l *lexer.Lexer) (Action, error) {
+func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 	var err error
 
-	if _, err = l.Expect("duplicate("); err != nil {
+	if _, err = s.Expect("duplicate("); err != nil {
 		return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
 	}
 
 	action := &DuplicateAction{}
-	if action.Left, err = ParseAction(l); err != nil {
-		if c, err2 := l.Peek(); err2 == nil && c == ',' {
+	if action.Left, err = ParseAction(s); err != nil {
+		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.Left = &SendAction{}
 		} else {
 			return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
 		}
 	}
 
-	if _, err = l.Expect(","); err != nil {
+	if _, err = s.Expect(","); err != nil {
 		return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
 	}
 
-	if action.Right, err = ParseAction(l); err != nil {
-		if c, err2 := l.Peek(); err2 == nil && c == ')' {
+	if action.Right, err = ParseAction(s); err != nil {
+		if c, err2 := s.Peek(); err2 == nil && c == ')' {
 			action.Right = &SendAction{}
 		} else {
 			return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
 		}
 	}
 
-	if _, err = l.Expect(")"); err != nil {
+	if _, err = s.Expect(")"); err != nil {
 		return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
 	}
 

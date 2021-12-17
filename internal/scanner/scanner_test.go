@@ -1,16 +1,16 @@
-package lexer_test
+package scanner_test
 
 import (
 	"testing"
 
-	"github.com/Crosse/geneva/internal/lexer"
+	"github.com/Crosse/geneva/internal/scanner"
 )
 
 func TestLexer(t *testing.T) {
 	source := "abcde"
-	l := lexer.NewLexer(source)
+	l := scanner.NewScanner(source)
 	if l == nil {
-		t.Fatal("nil lexer")
+		t.Fatal("nil scanner")
 	}
 
 	r, err := l.Peek()
@@ -65,14 +65,14 @@ func TestLexer(t *testing.T) {
 }
 
 func TestExpectPastEnd(t *testing.T) {
-	l := lexer.NewLexer("abc")
+	l := scanner.NewScanner("abc")
 	if _, err := l.Expect("abcde"); err == nil {
 		t.Fatalf("Expect() past end of text should have failed")
 	}
 }
 
 func TestFindToken(t *testing.T) {
-	l := lexer.NewLexer("abcde")
+	l := scanner.NewScanner("abcde")
 	if !l.FindToken("a", true) {
 		t.Fatal("FindToken(): case-sensitive search for 'a' failed when it should not have")
 	}
@@ -86,7 +86,7 @@ func TestFindToken(t *testing.T) {
 }
 
 func TestAdvance(t *testing.T) {
-	l := lexer.NewLexer("abcde")
+	l := scanner.NewScanner("abcde")
 	if err := l.Advance(1); err != nil {
 		t.Fatalf("Advance() returned error: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestAdvance(t *testing.T) {
 }
 
 func TestUntil(t *testing.T) {
-	l := lexer.NewLexer("abcde")
+	l := scanner.NewScanner("abcde")
 	token, err := l.Until('c')
 	if err != nil {
 		t.Fatal("Until() failed to find 'c'")
@@ -120,7 +120,7 @@ func TestUntil(t *testing.T) {
 
 func TestRest(t *testing.T) {
 	str := "abcde"
-	l := lexer.NewLexer(str)
+	l := scanner.NewScanner(str)
 	_, _ = l.Pop()
 
 	if string(l.Rest()) != str[1:] {

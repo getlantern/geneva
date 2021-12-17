@@ -1,4 +1,4 @@
-package lexer
+package scanner
 
 import (
 	"fmt"
@@ -6,16 +6,16 @@ import (
 	"unicode"
 )
 
-type Lexer struct {
+type Scanner struct {
 	rest            []rune
 	currentPosition int
 }
 
-func NewLexer(source string) *Lexer {
-	return &Lexer{[]rune(source), 0}
+func NewScanner(source string) *Scanner {
+	return &Scanner{[]rune(source), 0}
 }
 
-func (l *Lexer) tokenNotFound() error {
+func (l *Scanner) tokenNotFound() error {
 	r, err := l.Peek()
 	if err != nil {
 		return err
@@ -24,18 +24,18 @@ func (l *Lexer) tokenNotFound() error {
 	return fmt.Errorf(`token "%c" not recognized at char %d`, r, l.currentPosition)
 }
 
-func (l *Lexer) Rest() []rune {
+func (l *Scanner) Rest() []rune {
 	return l.rest[l.currentPosition:]
 }
 
-func (l *Lexer) Peek() (rune, error) {
+func (l *Scanner) Peek() (rune, error) {
 	if l.currentPosition >= len(l.rest) {
 		return 0, io.EOF
 	}
 	return l.rest[l.currentPosition], nil
 }
 
-func (l *Lexer) Pop() (rune, error) {
+func (l *Scanner) Pop() (rune, error) {
 	b, err := l.Peek()
 	if err != nil {
 		return 0, err
@@ -45,7 +45,7 @@ func (l *Lexer) Pop() (rune, error) {
 	return b, nil
 }
 
-func (l *Lexer) Expect(token string) (string, error) {
+func (l *Scanner) Expect(token string) (string, error) {
 	if len(token) > len(l.rest)-l.currentPosition {
 		return "", io.EOF
 	}
@@ -59,7 +59,7 @@ func (l *Lexer) Expect(token string) (string, error) {
 	return token, nil
 }
 
-func (l *Lexer) FindToken(token string, caseSensitive bool) bool {
+func (l *Scanner) FindToken(token string, caseSensitive bool) bool {
 	if len(token) > len(l.rest)-l.currentPosition {
 		return false
 	}
@@ -78,7 +78,7 @@ func (l *Lexer) FindToken(token string, caseSensitive bool) bool {
 	return true
 }
 
-func (l *Lexer) Until(r rune) (string, error) {
+func (l *Scanner) Until(r rune) (string, error) {
 	start := l.currentPosition
 	for _, c := range l.rest[start:] {
 		if r == c {
@@ -90,7 +90,7 @@ func (l *Lexer) Until(r rune) (string, error) {
 	return "", io.EOF
 }
 
-func (l *Lexer) Advance(count int) error {
+func (l *Scanner) Advance(count int) error {
 	if count > len(l.rest)-l.currentPosition {
 		return io.EOF
 	}
@@ -99,7 +99,7 @@ func (l *Lexer) Advance(count int) error {
 	return nil
 }
 
-func (l *Lexer) Chomp() {
+func (l *Scanner) Chomp() {
 	for {
 		c, err := l.Peek()
 		if err != nil {

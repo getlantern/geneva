@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Crosse/geneva/internal/lexer"
+	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
@@ -207,16 +207,16 @@ func (a *FragmentAction) String() string {
 		a.SecondFragmentAction)
 }
 
-func ParseFragmentAction(l *lexer.Lexer) (Action, error) {
-	if _, err := l.Expect("fragment{"); err != nil {
+func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
+	if _, err := s.Expect("fragment{"); err != nil {
 		return nil, fmt.Errorf("invalid fragment rule: %v", err)
 	}
 
-	str, err := l.Until('}')
+	str, err := s.Until('}')
 	if err != nil {
 		return nil, fmt.Errorf("invalid fragment rule: %v", err)
 	}
-	_, _ = l.Pop()
+	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
 	if len(fields) != 3 {
@@ -245,33 +245,33 @@ func ParseFragmentAction(l *lexer.Lexer) (Action, error) {
 		return nil, fmt.Errorf("invalid fragment fule: %s is not a valid boolean", fields[2])
 	}
 
-	if _, err := l.Expect("("); err != nil {
+	if _, err := s.Expect("("); err != nil {
 		action.FirstFragmentAction = &SendAction{}
 		action.SecondFragmentAction = &SendAction{}
 		return action, nil
 	}
 
-	if action.FirstFragmentAction, err = ParseAction(l); err != nil {
-		if c, err2 := l.Peek(); err2 == nil && c == ',' {
+	if action.FirstFragmentAction, err = ParseAction(s); err != nil {
+		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.FirstFragmentAction = &SendAction{}
 		} else {
 			return nil, fmt.Errorf("invalid fragment rule: %v", err)
 		}
 	}
 
-	if _, err = l.Expect(","); err != nil {
+	if _, err = s.Expect(","); err != nil {
 		return nil, fmt.Errorf("invalid fragment() rule: %v", err)
 	}
 
-	if action.SecondFragmentAction, err = ParseAction(l); err != nil {
-		if c, err2 := l.Peek(); err2 == nil && c == ')' {
+	if action.SecondFragmentAction, err = ParseAction(s); err != nil {
+		if c, err2 := s.Peek(); err2 == nil && c == ')' {
 			action.SecondFragmentAction = &SendAction{}
 		} else {
 			return nil, fmt.Errorf("invalid fragment rule: %v", err)
 		}
 	}
 
-	if _, err := l.Expect(")"); err != nil {
+	if _, err := s.Expect(")"); err != nil {
 		return nil, fmt.Errorf("invalid fragment rule: %v", err)
 	}
 

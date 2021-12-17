@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/Crosse/geneva/actions"
-	"github.com/Crosse/geneva/internal/lexer"
+	"github.com/Crosse/geneva/internal/scanner"
 )
 
 type Strategy struct {
@@ -16,7 +16,7 @@ type Strategy struct {
 
 func ParseStrategy(strategy string) (*Strategy, error) {
 	// inbound-tree \/ outbound-tree
-	l := lexer.NewLexer(strings.TrimSpace(strategy))
+	l := scanner.NewScanner(strings.TrimSpace(strategy))
 
 	st := &Strategy{
 		make([]*actions.ActionTree, 0, 1),

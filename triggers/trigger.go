@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Crosse/geneva/internal/lexer"
+	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/google/gopacket"
 	_ "github.com/google/gopacket/layers"
 )
@@ -18,16 +18,16 @@ type Trigger interface {
 	fmt.Stringer
 }
 
-func ParseTrigger(l *lexer.Lexer) (Trigger, error) {
-	if _, err := l.Expect("["); err != nil {
+func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
+	if _, err := s.Expect("["); err != nil {
 		return nil, err
 	}
 
-	str, err := l.Until(']')
+	str, err := s.Until(']')
 	if err != nil {
 		return nil, err
 	}
-	_, _ = l.Pop()
+	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
 	if len(fields) < 3 {

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Crosse/geneva/actions"
-	"github.com/Crosse/geneva/internal/lexer"
+	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
@@ -65,7 +65,7 @@ func TestDropAction(t *testing.T) {
 func TestSimpleDuplicateAction(t *testing.T) {
 	pkt := gopacket.NewPacket(ping, layers.LayerTypeEthernet, gopacket.Default)
 
-	l := lexer.NewLexer("duplicate(send,send)")
+	l := scanner.NewScanner("duplicate(send,send)")
 	a, err := actions.ParseAction(l)
 	if err != nil {
 		t.Fatalf("ParseAction() got an error: %v", err)
@@ -80,7 +80,7 @@ func TestSimpleDuplicateAction(t *testing.T) {
 func TestDuplicateActionDrop(t *testing.T) {
 	pkt := gopacket.NewPacket(ping, layers.LayerTypeEthernet, gopacket.Default)
 
-	l := lexer.NewLexer("duplicate(send,drop)")
+	l := scanner.NewScanner("duplicate(send,drop)")
 	a, err := actions.ParseAction(l)
 	if err != nil {
 		t.Fatalf("ParseAction() got an error: %v", err)
@@ -102,7 +102,7 @@ func TestParseFragmentAction(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf(`"%s"`, tc), func(t *testing.T) {
-			l := lexer.NewLexer(tc)
+			l := scanner.NewScanner(tc)
 			_, err := actions.ParseAction(l)
 			if err != nil {
 				t.Fatalf("ParseAction() got an error: %v", err)
@@ -118,7 +118,7 @@ func TestFragmentAction(t *testing.T) {
 	fragSize := uint16(8)
 	str := fmt.Sprintf("fragment{IP:%d:true}", fragSize)
 
-	l := lexer.NewLexer(str)
+	l := scanner.NewScanner(str)
 	a, err := actions.ParseAction(l)
 	if err != nil {
 		t.Fatalf("ParseAction() got an error: %v", err)
@@ -223,7 +223,7 @@ func TestFragmentAction(t *testing.T) {
 
 func TestActionTreeSimple(t *testing.T) {
 	str := "[TCP:flags:S]-duplicate(send,send)-|"
-	l := lexer.NewLexer(str)
+	l := scanner.NewScanner(str)
 	at, err := actions.ParseActionTree(l)
 	if err != nil {
 		t.Fatalf("ParseActionTree() got an error: %v", err)
@@ -246,7 +246,7 @@ func TestActionTreeSimple(t *testing.T) {
 
 func TestActionTreeNestedActions(t *testing.T) {
 	str := "[TCP:flags:S]-duplicate(duplicate(drop,duplicate(send,drop)),send)-|"
-	l := lexer.NewLexer(str)
+	l := scanner.NewScanner(str)
 	at, err := actions.ParseActionTree(l)
 	if err != nil {
 		t.Fatalf("ParseActionTree() got an error: %v", err)
@@ -279,7 +279,7 @@ func TestActionSendElision(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf(`"%s"`, tc), func(t *testing.T) {
-			l := lexer.NewLexer(tc.elided)
+			l := scanner.NewScanner(tc.elided)
 			a, err := actions.ParseActionTree(l)
 			if err != nil {
 				t.Fatalf("ParseActionTree() got an error: %v", err)

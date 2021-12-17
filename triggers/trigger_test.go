@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Crosse/geneva/internal/lexer"
+	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/Crosse/geneva/triggers"
 )
 
@@ -19,7 +19,7 @@ func TestParseTrigger(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			l := lexer.NewLexer(tc.trigger)
+			l := scanner.NewScanner(tc.trigger)
 			trigger, err := triggers.ParseTrigger(l)
 			if err != nil {
 				t.Fatalf("ParseTrigger() got an error: %v", err)
@@ -67,7 +67,7 @@ func TestParseTriggerFailure(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf(`"%s"`, tc), func(t *testing.T) {
-			l := lexer.NewLexer(tc)
+			l := scanner.NewScanner(tc)
 			_, err := triggers.ParseTrigger(l)
 			if err == nil {
 				t.Fatalf("ParseTrigger() did not return an error when it should have")
@@ -86,7 +86,7 @@ func TestTriggersWithGas(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			l := lexer.NewLexer(tc.trigger)
+			l := scanner.NewScanner(tc.trigger)
 			trigger, err := triggers.ParseTrigger(l)
 			if err != nil {
 				t.Fatalf("ParseTrigger() got an error: %v", err)

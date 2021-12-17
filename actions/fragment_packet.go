@@ -170,54 +170,6 @@ func ComputeIPv4Checksum(header []byte) uint16 {
 	return chksum16
 }
 
-func fragmentIPv4SegmentOld(packet gopacket.Packet, offset int) []gopacket.Packet {
-	offset -= offset % 8
-	payload := packet.NetworkLayer().LayerPayload()
-	buf := gopacket.NewSerializeBuffer()
-	opts := gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-
-	// first fragment
-	gopacket.SerializeLayers(buf, opts,
-		packet.NetworkLayer().(*layers.IPv4),
-		gopacket.Payload(payload[:offset]))
-
-	first := gopacket.NewPacket(buf.Bytes(), layers.LayerTypeIPv4, gopacket.Default)
-	if layer, ok := first.NetworkLayer().(*layers.IPv4); ok {
-		layer.Flags |= layers.IPv4MoreFragments
-		layer.FragOffset = 0
-	}
-	buf = gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializePacket(buf, opts, first); err != nil {
-		// XXX if this can fail we should probably return the error as well.
-		fmt.Printf("wtf: %v\n", err)
-		return []gopacket.Packet{}
-	}
-	first = gopacket.NewPacket(buf.Bytes(), layers.LayerTypeIPv4, gopacket.NoCopy)
-
-	// second fragment
-	buf = gopacket.NewSerializeBuffer()
-	gopacket.SerializeLayers(buf, opts,
-		packet.NetworkLayer().(*layers.IPv4),
-		gopacket.Payload(payload[offset:]))
-	second := gopacket.NewPacket(buf.Bytes(), layers.LayerTypeIPv4, gopacket.Lazy)
-	if layer, ok := first.NetworkLayer().(*layers.IPv4); ok {
-		layer.Flags &= layers.IPv4MoreFragments
-		layer.FragOffset = uint16(offset) / 8
-	}
-	buf = gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializePacket(buf, opts, second); err != nil {
-		// XXX if this can fail we should probably return the error as well.
-		fmt.Printf("wtf the sequel: %v\n", err)
-		return []gopacket.Packet{}
-	}
-	second = gopacket.NewPacket(buf.Bytes(), layers.LayerTypeIPv4, gopacket.NoCopy)
-
-	return []gopacket.Packet{first, second}
-}
-
 func fragmentIPv6Segment(data []byte, offset int) []gopacket.Packet {
 	return nil
 }

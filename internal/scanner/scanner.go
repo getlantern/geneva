@@ -28,10 +28,6 @@ func (l *Scanner) tokenNotFound() error {
 	return fmt.Errorf(`token "%c" not recognized at char %d`, r, l.currentPosition)
 }
 
-func (l *Scanner) Rest() []rune {
-	return l.rest[l.currentPosition:]
-}
-
 // Peek returns the next rune without consuming it. It returns io.EOF if the scanner is at the end of the source.
 func (l *Scanner) Peek() (rune, error) {
 	if l.currentPosition >= len(l.rest) {

@@ -117,13 +117,3 @@ func TestUntil(t *testing.T) {
 		t.Fatalf("Peek() after Advance(): expected %c, got %c", 'c', r)
 	}
 }
-
-func TestRest(t *testing.T) {
-	str := "abcde"
-	l := scanner.NewScanner(str)
-	_, _ = l.Pop()
-
-	if string(l.Rest()) != str[1:] {
-		t.Fatalf("expected %v, got %v", string(l.Rest()), str[1:])
-	}
-}

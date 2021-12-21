@@ -13,16 +13,20 @@ type DuplicateAction struct {
 	Right Action
 }
 
-func duplicatePacket(packet gopacket.Packet, leftAction, rightAction Action) []gopacket.Packet {
-	packets := leftAction.Apply(packet)
-	return append(packets, rightAction.Apply(packet)...)
+func duplicate(packet gopacket.Packet) []gopacket.Packet {
+	buf := make([]byte, 0, len(packet.Data()))
+	copy(buf, packet.Data())
+	p2 := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
+	return []gopacket.Packet{packet, p2}
 }
 
 // Apply duplicates packet, returning zero or more potentially-modified packets.
 //
 // The number of returned packets depends on this action's sub-actions.
 func (a *DuplicateAction) Apply(packet gopacket.Packet) []gopacket.Packet {
-	return duplicatePacket(packet, a.Left, a.Right)
+	duped := duplicate(packet)
+	packets := a.Left.Apply(duped[0])
+	return append(packets, a.Right.Apply(duped[1])...)
 }
 
 // String returns a string representation of this Action.

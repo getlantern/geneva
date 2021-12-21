@@ -13,15 +13,15 @@ import (
 
 // FragmentAction is a Geneva action that splits a packet into two fragments and applies separate action trees to each.
 //
-// As an example, if Proto is "IP" and FragSize is 8, this will fragment a 60-byte IP segment into two fragments: the
-// first will contain the first eight bytes of the original segment's payload, and the second will contain the remaining
+// As an example, if Proto is "IP" and FragSize is 8, this will fragment a 60-byte IP packet into two fragments: the
+// first will contain the first eight bytes of the original packet's payload, and the second will contain the remaining
 // 52 bytes.  Each fragment will retain the original header (modulo the fields that must be updated to mark it as a
-// fragmented segment). If the Proto's header includes a checksum, it will be recomputed.
+// fragmented packet). If the Proto's header includes a checksum, it will be recomputed.
 type FragmentAction struct {
 	// Proto is the protocol layer where the packet will be fragmented.
 	Proto string
 	// FragSize is the offset into the protocol's payload where fragmentation will happen.
-	FragSize uint16
+	FragSize int
 	// InOrder specifies whether to return the fragments in order.
 	InOrder bool
 	// FirstFragmentAction is the action to apply to the first fragment.
@@ -36,14 +36,16 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) []gopacket.Packet {
 
 	switch a.Proto {
 	case "IP":
-		packets = FragmentIPSegment(packet, a.FragSize)
+		// Note: the original Geneva code only fragments IPv4, not IPv6.
+		packets = FragmentIPPacket(packet, a.FragSize)
+	case "TCP":
+		packets = FragmentTCPSegment(packet, a.FragSize)
 	default:
-		/// TODO: log this and return the packet instead of panicking
-		packets = fragmentIPv6Segment(packet, a.FragSize)
-		panic(fmt.Sprintf("%s is unimplemented", a.Proto))
+		// TODO: should we log this?
+		packets = duplicate(packet)
 	}
 
-	if !a.InOrder {
+	if len(packets) == 2 && !a.InOrder {
 		packets = []gopacket.Packet{packets[1], packets[0]}
 	}
 
@@ -52,52 +54,35 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) []gopacket.Packet {
 	return result
 }
 
-// FragmentIPSegment will fragment an dIPv4 or IPv6 segment into two segments at the given offset.
-//
-// The first fragment will include up to fragSize bytes of the IP segment's payload, and the second fragment will
-// include the rest.
-func FragmentIPSegment(packet gopacket.Packet, fragSize uint16) []gopacket.Packet {
-	fragSize -= fragSize % 8
-
-	netLayer := packet.NetworkLayer()
-	if netLayer == nil {
-		// uh oh, this isn't something we can deal with. Bail!
-		/// TODO: log this
-		return []gopacket.Packet{packet}
-	}
-
-	if ipv4, _ := netLayer.(*layers.IPv4); ipv4 != nil {
-		return fragmentIPv4Segment(packet, fragSize)
-	} else if ipv6, _ := netLayer.(*layers.IPv6); ipv6 != nil {
-		return fragmentIPv6Segment(packet, fragSize)
-	}
-
-	// This was neither IPv4 nor IPv6 (somehow?), so just pass it through
-	/// TODO: log this
+func FragmentTCPSegment(packet gopacket.Packet, fragSize int) []gopacket.Packet {
+	// TODO
 	return []gopacket.Packet{packet}
 }
 
-func fragmentIPv4Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Packet {
-	// corner case: if offset is 0 (Geneva calls "offset" the "fragsize"), then just return the original
-	// packet.
+// FragmentIPPacket will fragment an IPv4 or IPv6 packet into two packets at the given 8-byte chunk offset.
+//
+// The first fragment will include up to (fragSize * 8) bytes of the IP packet's payload, and the second fragment will
+// include the rest.
+func FragmentIPPacket(packet gopacket.Packet, fragSize int) []gopacket.Packet {
+	if packet.NetworkLayer() == nil || packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {
+		return duplicate(packet)
+	}
+
+	plen := len(packet.NetworkLayer().LayerPayload())
+	if plen == 0 {
+		return duplicate(packet)
+	}
+
+	if fragSize == -1 || (fragSize*8)%8 > plen || plen <= 8 {
+		fragSize = (plen / 2) % 8
+	}
+
+	// corner case: if fragSize is 0, just return the original packet.
 	if fragSize == 0 {
 		return []gopacket.Packet{packet}
 	}
 
-	// corner case: if the packet has no payload, the canonical Geneva implementation simply duplicates the packet.
-	if len(packet.NetworkLayer().LayerPayload()) == 0 {
-		return duplicatePacket(packet, DefaultSendAction, DefaultSendAction)
-	}
-
-	// fix up the fragment size to a multiple of 8 to satisfy fragment offset value
-	fragSize -= fragSize % 8
-
-	// corner case: if the IP payload is smaller than our fragment size, just return the packet.
-	if len(packet.NetworkLayer().LayerPayload()) == int(fragSize) {
-		return []gopacket.Packet{packet}
-	}
-
-	// from this point on we can assume that the IP payload is _at least_ fragSize bytes long
+	// from this point on we can assume that the IP payload is _at least_ (fragSize*8) bytes long
 
 	buf := make([]byte, len(packet.Data()))
 	copy(buf, packet.Data())
@@ -105,8 +90,11 @@ func fragmentIPv4Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Pac
 	hdrLen := uint16((buf[0] & 0x0f) * 4)
 	payloadLen := binary.BigEndian.Uint16(buf[2:]) - hdrLen
 
-	// update the total length of the first fragmented segment
-	binary.BigEndian.PutUint16(buf[2:], hdrLen+fragSize)
+	// fix up the fragment size to a multiple of 8 to satisfy fragment offset value
+	offset := uint16((fragSize * 8))
+
+	// update the total length of the first fragmented packet
+	binary.BigEndian.PutUint16(buf[2:], hdrLen+offset)
 
 	// set the More Fragments bit, and make the fragment offset 0
 	flagsAndFrags := (binary.BigEndian.Uint16(buf[6:]) | 0x20) & 0xe0
@@ -115,21 +103,21 @@ func fragmentIPv4Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Pac
 	ComputeIPv4Checksum(buf[:hdrLen])
 
 	// slice off everything past the first fragment's end
-	buf = buf[:hdrLen+fragSize]
+	buf = buf[:hdrLen+offset]
 
 	first := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
 
 	// now start on the second fragment.
 	// First copy the old IP header as-is, then copy just the second fragment's payload right after.
-	buf = make([]byte, len(packet.Data())-int(fragSize))
+	buf = make([]byte, len(packet.Data())-int(offset))
 	copy(buf, packet.Data()[:hdrLen])
-	copy(buf[hdrLen:], packet.Data()[hdrLen+(fragSize):])
+	copy(buf[hdrLen:], packet.Data()[hdrLen+(offset):])
 
 	// fix up the length
-	binary.BigEndian.PutUint16(buf[2:], payloadLen-fragSize)
+	binary.BigEndian.PutUint16(buf[2:], hdrLen+payloadLen-offset)
 
 	// clear the MF bit and set the fragment offset appropriately
-	flagsAndFrags = (binary.BigEndian.Uint16(buf[6:]) & 0x40) + (fragSize / 8)
+	flagsAndFrags = (binary.BigEndian.Uint16(buf[6:]) & 0x40) + uint16(fragSize)
 	binary.BigEndian.PutUint16(buf[6:], flagsAndFrags)
 
 	ComputeIPv4Checksum(buf[:hdrLen])
@@ -168,10 +156,6 @@ func ComputeIPv4Checksum(header []byte) uint16 {
 	chksum16 := uint16(^chksum)
 	binary.BigEndian.PutUint16(header[10:], chksum16)
 	return chksum16
-}
-
-func fragmentIPv6Segment(packet gopacket.Packet, fragSize uint16) []gopacket.Packet {
-	return nil
 }
 
 // String returns a string representation of this Action.
@@ -216,7 +200,7 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalud fragment rule: \"%s\" is not a valid offset", fields[1])
 	}
-	action.FragSize = uint16(ofs)
+	action.FragSize = int(ofs)
 
 	if action.InOrder, err = strconv.ParseBool(fields[2]); err != nil {
 		return nil, fmt.Errorf("invalid fragment rule: \"%s\" is not a valid boolean", fields[2])

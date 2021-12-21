@@ -138,7 +138,7 @@ func TestFragmentAction(t *testing.T) {
 	pkt := gopacket.NewPacket(ssh, layers.LayerTypeIPv4, gopacket.Default)
 	pktIPv4Layer := pkt.NetworkLayer().(*layers.IPv4)
 
-	fragSize := uint16(8)
+	fragSize := uint16(1)
 	str := fmt.Sprintf("fragment{IP:%d:true}", fragSize)
 
 	l := scanner.NewScanner(str)
@@ -155,12 +155,24 @@ func TestFragmentAction(t *testing.T) {
 	expected := []struct {
 		packetDumpLogged bool
 		frag             gopacket.Packet
-		len              uint16
 		moreFragments    layers.IPv4Flag
 		fragOffset       uint16
+		payloadLen       uint16
 	}{
-		{false, result[0], uint16(pktIPv4Layer.IHL*4) + fragSize, 1, 0},
-		{false, result[1], uint16(len(pktIPv4Layer.Payload)) - fragSize, 0, (fragSize - (fragSize % 8)) / 8},
+		{
+			false,
+			result[0],
+			1,
+			0,
+			fragSize * 8,
+		},
+		{
+			false,
+			result[1],
+			0,
+			fragSize,
+			uint16(len(pktIPv4Layer.Payload)) - fragSize*8,
+		},
 	}
 
 	for i, e := range expected {
@@ -183,9 +195,20 @@ func TestFragmentAction(t *testing.T) {
 			t.Errorf("checksum of fragment %d is the same as the original packet (0x%x)", i, layer.Checksum)
 		}
 
-		if layer.Length != e.len {
+		payloadLen := layer.Length - uint16(layer.IHL*4)
+		if payloadLen != e.payloadLen {
 			dump()
-			t.Errorf("fragment %d total length: expected %d, got %d", i, e.len, layer.Length)
+			t.Errorf("fragment %d length header field: expected %d, got %d", i, e.payloadLen, payloadLen)
+		}
+
+		if len(layer.Payload) != int(e.payloadLen) {
+			dump()
+			t.Errorf("fragment %d payload length: expected %d, got %d", i, e.payloadLen, len(layer.Payload))
+		}
+
+		if len(e.frag.Data()) != int(layer.Length) {
+			dump()
+			t.Errorf("fragment %d total length: expected %d, got %d", i, layer.Length, len(e.frag.Data()))
 		}
 
 		if mf := layer.Flags & layers.IPv4MoreFragments; mf != e.moreFragments {

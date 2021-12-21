@@ -209,17 +209,17 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	case "udp":
 		action.Proto = "UDP"
 	default:
-		return nil, fmt.Errorf("invalid fragment rule: %s is not a recognized protocol", fields[0])
+		return nil, fmt.Errorf("invalid fragment rule: \"%s\" is not a recognized protocol", fields[0])
 	}
 
 	ofs, err := strconv.ParseUint(fields[1], 10, 16)
 	if err != nil {
-		return nil, fmt.Errorf("invalud fragment rule: %s is not a valid offset", fields[1])
+		return nil, fmt.Errorf("invalud fragment rule: \"%s\" is not a valid offset", fields[1])
 	}
 	action.FragSize = uint16(ofs)
 
 	if action.InOrder, err = strconv.ParseBool(fields[2]); err != nil {
-		return nil, fmt.Errorf("invalid fragment fule: %s is not a valid boolean", fields[2])
+		return nil, fmt.Errorf("invalid fragment rule: \"%s\" is not a valid boolean", fields[2])
 	}
 
 	if _, err := s.Expect("("); err != nil {

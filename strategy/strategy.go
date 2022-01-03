@@ -69,6 +69,10 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 		forest = s.Outbound
 	}
 
+	if len(forest) == 0 {
+		return []gopacket.Packet{packet}, nil
+	}
+
 	packets := make([]gopacket.Packet, 0, 2)
 
 	// XXX: here's the thing: the paper mentions that each action tree in a forest gets "its own fresh copy of the
@@ -84,6 +88,9 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 				return nil, err
 			}
 			packets = append(packets, result...)
+		} else {
+			// When the action tree doesn't match, return the packet unharmed
+			packets = append(packets, packet)
 		}
 	}
 

@@ -1,3 +1,5 @@
+; Quick BNF(-ish?) grammar to help me get my head around the syntax
+
 _alpha : 'a'-'z' | 'A'-'Z' ;
 _alnum : _alpha | '0'..'9' ;
 _number : [ '-' ] '1'..'9' { '0'..'9' } ;
@@ -19,7 +21,8 @@ Trigger : "[" Proto ":" field ":" value "]" ;
 Proto : "IP"
       | "ip"
       | "TCP"
-      | "tcp" ;
+      | "tcp"
+      ;
 
 Action : Duplicate
        | Fragment
@@ -28,19 +31,22 @@ Action : Duplicate
        | Send
        | empty
        ;
- done
-Duplicate : "duplicate(" Action "," Action ")" ; done
 
+;;;;;;;;; duplicate rule
+Duplicate : "duplicate(" Action "," Action ")" ;
+
+;;;;;;;;; fragment rule
 Fragment : "fragment" FragmentRule
          | "fragment" FragmentRule "(" Action "," Action ")"
          ;
 
-FragmentRule : "{" Proto ":" offset ":" InOrder "}" ;
+FragmentRule : "{" Proto ":" offset ":" InOrder "}"
 
 InOrder : "True"
         | "False"
         ;
 
+;;;;;;;;; tamper rule
 Tamper : "tamper" TamperRule
        | "tamper" TamperRule "(" Action "," Action ")"
        ;
@@ -55,6 +61,8 @@ Replace : "replace:" value ;
 
 Corrupt : "corrupt" ;
 
-Drop : "drop" ; done
+;;;;;;;;; drop rule
+Drop : "drop" ;
 
-Send : "send" ; done
+;;;;;;;;; send rule
+Send : "send" ;

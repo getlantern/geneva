@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Crosse/geneva/internal"
 	"github.com/Crosse/geneva/internal/scanner"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -65,9 +66,76 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	return append(lpackets, rpackets...), nil
 }
 
-func FragmentTCPSegment(packet gopacket.Packet, fragSize int) []gopacket.Packet {
-	// TODO
-	return []gopacket.Packet{packet}
+func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, error) {
+	// XXX: the original Geneva code does not seem to handle TCP segmentation for IPv6 packets, so we don't either
+	// for now.
+	if packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {
+		return duplicate(packet)
+	}
+
+	if packet.TransportLayer() == nil || packet.TransportLayer().LayerType() != layers.LayerTypeTCP {
+		return duplicate(packet)
+	}
+
+	tcpPayload := packet.TransportLayer().LayerPayload()
+
+	tcpPayloadLen := len(tcpPayload)
+	if tcpPayloadLen == 0 {
+		return duplicate(packet)
+	}
+
+	if fragSize == -1 || fragSize > tcpPayloadLen-1 {
+		fragSize = tcpPayloadLen / 2
+	}
+
+	// XXX: upstream Geneva supports "overlap bytes"; i.e., taking the first few bytes of the second fragment and
+	// tacking them onto the end of the first fragment. It's not mentioned in the original paper. We don't do this
+	// right now, but could later.
+
+	headersLen := len(packet.Data()) - tcpPayloadLen
+
+	/*
+	 * Strangely, all the manual bit-banging below was easier than dealing with creating packets using gopacket.
+	 */
+
+	// create the first fragment.
+	f1Len := headersLen + fragSize
+	buf := make([]byte, f1Len)
+	copy(buf, packet.Data()[:f1Len])
+
+	// fix up the IP header's Total Length field and checksum
+	binary.BigEndian.PutUint16(buf[2:], uint16(f1Len))
+	ipHdrLen := uint16(buf[0]&0x0f) * 4
+	ComputeIPv4Checksum(buf[:ipHdrLen])
+
+	chksum := ComputeTCPChecksum(buf[:ipHdrLen], buf[ipHdrLen:headersLen], buf[headersLen:])
+	binary.BigEndian.PutUint16(buf[ipHdrLen+16:], chksum)
+
+	first := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
+
+	// create the second fragment.
+	f2Len := headersLen + tcpPayloadLen - fragSize
+	buf = make([]byte, f2Len)
+	copy(buf, packet.Data()[:headersLen])
+	copy(buf[headersLen:], packet.Data()[headersLen+fragSize:])
+
+	// fix up the IP header's Total Length field and checksum
+	binary.BigEndian.PutUint16(buf[2:], uint16(f2Len))
+	ComputeIPv4Checksum(buf[:ipHdrLen])
+
+	// fix up the TCP sequence number. Excitingly, Go does integer wrapping, so we don't have to.
+	tcp := buf[ipHdrLen:]
+	seqNum := binary.BigEndian.Uint32(tcp[4:])
+	seqNum += uint32(fragSize)
+	binary.BigEndian.PutUint32(tcp[4:], seqNum)
+
+	// fix up the TCP checksum
+	chksum = ComputeTCPChecksum(buf[:ipHdrLen], buf[ipHdrLen:headersLen], buf[headersLen:])
+	binary.BigEndian.PutUint16(buf[ipHdrLen+16:], chksum)
+
+	second := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
+
+	return []gopacket.Packet{first, second}, nil
 }
 
 // FragmentIPPacket will fragment an IPv4 or IPv6 packet into two packets at the given 8-byte chunk offset.
@@ -140,15 +208,13 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 
 // VerifyIPv4Checksum verifies whether an IPv4 header's checksum field is correct.
 func VerifyIPv4Checksum(header []byte) bool {
-	chksum := uint32(0)
+	c := internal.OnesComplementChecksum{}
+
 	for i := 0; i < len(header); i += 2 {
-		chksum += uint32(binary.BigEndian.Uint16(header[i:]))
-	}
-	for chksum > 0xffff {
-		chksum = (chksum & 0xffff) + (chksum >> 16)
+		c.Add(binary.BigEndian.Uint16(header[i:]))
 	}
 
-	return uint16(^chksum) == 0
+	return c.Finalize() == 0
 }
 
 // ComputeIPv4Checksum computes a new checksum for the given IPv4 header and writes it into the header.
@@ -156,17 +222,54 @@ func ComputeIPv4Checksum(header []byte) uint16 {
 	// zero out the old checksum
 	binary.BigEndian.PutUint16(header[10:], 0)
 
-	chksum := uint32(0)
+	c := internal.OnesComplementChecksum{}
+
 	for i := 0; i < len(header); i += 2 {
-		chksum += uint32(binary.BigEndian.Uint16(header[i:]))
+		c.Add(binary.BigEndian.Uint16(header[i:]))
 	}
-	for chksum > 0xffff {
-		chksum = (chksum & 0xffff) + (chksum >> 16)
+	chksum := c.Finalize()
+	binary.BigEndian.PutUint16(header[10:], chksum)
+	return chksum
+}
+
+func ComputeTCPChecksum(ipHeader, tcpHeader, payload []byte) uint16 {
+	c := internal.OnesComplementChecksum{}
+
+	// pseudo-header
+	c.Add(binary.BigEndian.Uint16(ipHeader[12:])) // source ip address
+	c.Add(binary.BigEndian.Uint16(ipHeader[14:])) // destination ip address
+	c.Add(uint16(ipHeader[6]) << 8)               // protocol
+	tcpLength := binary.BigEndian.Uint16(ipHeader[2:])
+	tcpLength -= uint16((ipHeader[0] & 0xf)) * 4
+	c.Add(tcpLength) // "TCP Length" from RFC 793
+
+	// TCP header
+	for i := 0; i < len(tcpHeader); i += 2 {
+		if i == 16 {
+			// don't add existing checksum value
+			continue
+		}
+		c.Add(binary.BigEndian.Uint16(tcpHeader[i:]))
 	}
 
-	chksum16 := uint16(^chksum)
-	binary.BigEndian.PutUint16(header[10:], chksum16)
-	return chksum16
+	// TCP payload
+	for i := 0; i < len(payload); i += 2 {
+		if len(payload)-i == 1 {
+			// If there are an odd number of octets in the payload, the last octet must be padded on the
+			// right with zeros.
+			c.Add(uint16(payload[i]) << 8)
+		} else {
+			c.Add(binary.BigEndian.Uint16(payload[i:]))
+		}
+	}
+	return c.Finalize()
+}
+
+func VerifyTCPChecksum(ipHeader, tcpHeader, payload []byte) bool {
+	c := internal.OnesComplementChecksum{}
+	c.Add(ComputeTCPChecksum(ipHeader, tcpHeader, payload))
+	c.Add(binary.BigEndian.Uint16(tcpHeader[16:]))
+	return c.Finalize() == 0
 }
 
 // String returns a string representation of this Action.

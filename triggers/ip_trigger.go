@@ -2,8 +2,12 @@ package triggers
 
 import (
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
 )
 
@@ -71,8 +75,74 @@ func (t *IPTrigger) Gas() int {
 }
 
 // Matches returns whether the trigger matches the packet.
-func (t *IPTrigger) Matches(gopacket.Packet) (bool, error) {
-	return false, nil
+func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
+	ipLayer := pkt.NetworkLayer().(*layers.IPv4)
+	if ipLayer == nil {
+		// XXX currently only supports IPv4
+		return false, nil
+	}
+
+	switch t.Field() {
+	case "flags":
+		var val layers.IPv4Flag
+		// The original Geneva project heavily relies on Scapy for processing. Due to this, we need to convert
+		// from scapy's string representations to gopacket's more structured ones.
+		for _, flag := range strings.Split(t.value, "+") {
+			switch strings.ToLower(flag) {
+			case "mf":
+				val |= layers.IPv4MoreFragments
+			case "df":
+				val |= layers.IPv4DontFragment
+			case "evil":
+				val |= layers.IPv4EvilBit
+			}
+		}
+		return (ipLayer.Flags == val), nil
+	case "src":
+		ipAddr := net.ParseIP(t.value)
+		return ipLayer.SrcIP.Equal(ipAddr), nil
+	case "dst":
+		ipAddr := net.ParseIP(t.value)
+		return ipLayer.DstIP.Equal(ipAddr), nil
+	case "load":
+		for i, r := range []byte(t.value) {
+			if r != ipLayer.Payload[i] {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+
+	// The rest of the triggers work on numbers.
+	tmp, err := strconv.ParseUint(t.value, 0, 16)
+	if err != nil {
+		return false, err
+	}
+
+	v := uint16(tmp)
+
+	switch t.Field() {
+	case "version":
+		return (uint16(ipLayer.Version) == v), nil
+	case "ihl":
+		return (uint16(ipLayer.IHL) == v), nil
+	case "tos":
+		return (uint16(ipLayer.TOS) == v), nil
+	case "len":
+		return (uint16(ipLayer.Length) == v), nil
+	case "id":
+		return (uint16(ipLayer.Id) == v), nil
+	case "frag":
+		return (uint16(ipLayer.FragOffset) == v), nil
+	case "ttl":
+		return (uint16(ipLayer.TTL) == v), nil
+	case "proto":
+		return (uint16(ipLayer.Protocol) == v), nil
+	case "chksum":
+		return (uint16(ipLayer.Checksum) == v), nil
+	default:
+		return false, fmt.Errorf("IPTrigger.Matches(%s) is unimplemented", t.Field())
+	}
 }
 
 // NewIPTrigger creates a new IP trigger.

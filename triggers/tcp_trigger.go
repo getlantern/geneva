@@ -2,8 +2,11 @@ package triggers
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
 )
 
@@ -80,8 +83,125 @@ func (t *TCPTrigger) Gas() int {
 }
 
 // Matches returns whether the trigger matches the packet.
-func (t *TCPTrigger) Matches(gopacket.Packet) (bool, error) {
-	return false, nil
+func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
+	tcpLayer := pkt.TransportLayer().(*layers.TCP)
+	if tcpLayer == nil {
+		return false, nil
+	}
+
+	switch t.Field() {
+	case "flags":
+		for _, flag := range strings.ToUpper(t.value) {
+			var match bool
+
+			switch flag {
+			case 'F':
+				match = tcpLayer.FIN
+			case 'S':
+				match = tcpLayer.SYN
+			case 'R':
+				match = tcpLayer.RST
+			case 'P':
+				match = tcpLayer.PSH
+			case 'A':
+				match = tcpLayer.ACK
+			case 'U':
+				match = tcpLayer.URG
+			case 'E':
+				match = tcpLayer.ECE
+			case 'C':
+				match = tcpLayer.CWR
+			case 'N':
+				match = tcpLayer.NS
+			default:
+				match = false
+			}
+
+			if !match {
+				// bail early if the trigger wants a flag set that isn't
+				return false, nil
+			}
+		}
+		return true, nil
+	case "load":
+		for i, r := range []byte(t.value) {
+			if r != tcpLayer.Payload[i] {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+
+	if strings.HasPrefix(t.Field(), "options-") {
+		var optKind layers.TCPOptionKind
+
+		switch strings.Split(t.Field(), "-")[1] {
+		case "eol":
+			optKind = layers.TCPOptionKindEndList
+		case "nop":
+			optKind = layers.TCPOptionKindNop
+		case "mss":
+			optKind = layers.TCPOptionKindMSS
+		case "wscale":
+			optKind = layers.TCPOptionKindWindowScale
+		case "sackok":
+			optKind = layers.TCPOptionKindSACKPermitted
+		case "sack":
+			optKind = layers.TCPOptionKindSACK
+		case "timestamp":
+			optKind = layers.TCPOptionKindTimestamps
+		case "altchksum":
+			optKind = layers.TCPOptionKindAltChecksumData
+		case "altchksumopt":
+			optKind = layers.TCPOptionKindAltChecksum
+		case "md5header":
+			optKind = 19 // gopacket doesn't know about this one
+		case "uto":
+			optKind = 28 // "User Time-Out"; also unknown to gopacket
+		}
+
+		for _, opt := range tcpLayer.Options {
+			if opt.OptionType == optKind {
+				for i, b := range opt.OptionData {
+					if b != []byte(t.value)[i] {
+						return false, nil
+					}
+				}
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+
+	tmp, err := strconv.ParseUint(t.value, 0, 32)
+	if err != nil {
+		return false, err
+	}
+
+	v := uint32(tmp)
+
+	switch t.Field() {
+	case "sport":
+		return tcpLayer.SrcPort == layers.TCPPort(v), nil
+	case "dport":
+		return tcpLayer.DstPort == layers.TCPPort(v), nil
+	case "seq":
+		return tcpLayer.Seq == v, nil
+	case "ack":
+		return tcpLayer.Ack == v, nil
+	case "dataofs":
+		return uint32(tcpLayer.DataOffset) == v, nil
+	case "reserved":
+		return (uint32((pkt.Data()[12]&0xf)>>1) == v), nil
+	case "window":
+		return uint32(tcpLayer.Window) == v, nil
+	case "chksum":
+		return uint32(tcpLayer.Checksum) == v, nil
+	case "urgptr":
+		return uint32(tcpLayer.Urgent) == v, nil
+	}
+
+	return false, fmt.Errorf("TCPTrigger.Matches(%s) is unimplemented", t.Field())
 }
 
 // NewTCPTrigger creates a new TCP trigger.

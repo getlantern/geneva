@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Crosse/geneva/strategy"
+	"github.com/getlantern/geneva/strategy"
 )
 
 func TestFullStrategy(t *testing.T) {

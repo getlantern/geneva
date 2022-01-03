@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Crosse/geneva/internal/scanner"
+	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
 	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
 )

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Crosse/geneva"
+	"github.com/getlantern/geneva"
 
 	"github.com/urfave/cli/v2"
 )

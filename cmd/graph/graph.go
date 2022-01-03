@@ -8,9 +8,9 @@ import (
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
 
-	"github.com/Crosse/geneva"
-	"github.com/Crosse/geneva/actions"
-	"github.com/Crosse/geneva/strategy"
+	"github.com/getlantern/geneva"
+	"github.com/getlantern/geneva/actions"
+	"github.com/getlantern/geneva/strategy"
 )
 
 func fatal(m interface{}) {

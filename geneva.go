@@ -97,7 +97,9 @@
 // See https://censorship.ai for more information about Geneva itself.
 package geneva
 
-import "github.com/Crosse/geneva/strategy"
+import (
+	"github.com/getlantern/geneva/strategy"
+)
 
 // NewStrategy parses st into a Geneva strategy.
 //

@@ -1,4 +1,4 @@
-module github.com/Crosse/geneva
+module github.com/getlantern/geneva
 
 go 1.17
 

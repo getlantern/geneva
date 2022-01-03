@@ -6,8 +6,8 @@ import (
 	"net"
 	"os"
 
-	"github.com/Crosse/geneva"
-	"github.com/Crosse/geneva/strategy"
+	"github.com/getlantern/geneva"
+	"github.com/getlantern/geneva/strategy"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcapgo"

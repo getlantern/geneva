@@ -3,7 +3,7 @@ package scanner_test
 import (
 	"testing"
 
-	"github.com/Crosse/geneva/internal/scanner"
+	"github.com/getlantern/geneva/internal/scanner"
 )
 
 func TestLexer(t *testing.T) {

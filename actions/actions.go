@@ -3,8 +3,8 @@ package actions
 import (
 	"fmt"
 
-	"github.com/Crosse/geneva/internal/scanner"
-	"github.com/Crosse/geneva/triggers"
+	"github.com/getlantern/geneva/internal/scanner"
+	"github.com/getlantern/geneva/triggers"
 	"github.com/google/gopacket"
 	_ "github.com/google/gopacket/layers" // gopacket best practice
 )

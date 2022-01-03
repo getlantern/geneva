@@ -3,7 +3,7 @@ package actions
 import (
 	"fmt"
 
-	"github.com/Crosse/geneva/internal/scanner"
+	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
 )
 

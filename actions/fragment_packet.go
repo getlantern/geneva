@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Crosse/geneva/internal"
-	"github.com/Crosse/geneva/internal/scanner"
+	"github.com/getlantern/geneva/internal"
+	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )

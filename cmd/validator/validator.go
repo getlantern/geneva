@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Crosse/geneva"
+	"github.com/getlantern/geneva"
 )
 
 func fatal(m interface{}) {

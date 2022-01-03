@@ -30,8 +30,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Crosse/geneva/actions"
-	"github.com/Crosse/geneva/internal/scanner"
+	"github.com/getlantern/geneva/actions"
+	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
 )
 

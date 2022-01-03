@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Crosse/geneva/internal/scanner"
-	"github.com/Crosse/geneva/triggers"
+	"github.com/getlantern/geneva/internal/scanner"
+	"github.com/getlantern/geneva/triggers"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )

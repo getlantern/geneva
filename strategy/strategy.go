@@ -69,7 +69,7 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 		forest = s.Outbound
 	}
 
-	packets := make([]gopacket.Packet, 2)
+	packets := make([]gopacket.Packet, 0, 2)
 
 	// XXX: here's the thing: the paper mentions that each action tree in a forest gets "its own fresh copy of the
 	// original packet", so we should either copy it here before giving it to each action tree, or ensure that any

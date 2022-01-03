@@ -31,27 +31,38 @@ type FragmentAction struct {
 }
 
 // Apply applies this action to the given packet.
-func (a *FragmentAction) Apply(packet gopacket.Packet) []gopacket.Packet {
-	var packets []gopacket.Packet
+func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
+	var err error
+	var packets, lpackets, rpackets []gopacket.Packet
 
 	switch a.Proto {
 	case "IP":
 		// Note: the original Geneva code only fragments IPv4, not IPv6.
-		packets = FragmentIPPacket(packet, a.FragSize)
+		packets, err = FragmentIPPacket(packet, a.FragSize)
 	case "TCP":
-		packets = FragmentTCPSegment(packet, a.FragSize)
+		packets, err = FragmentTCPSegment(packet, a.FragSize)
 	default:
 		// TODO: should we log this?
-		packets = duplicate(packet)
+		packets, err = duplicate(packet)
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	if len(packets) == 2 && !a.InOrder {
 		packets = []gopacket.Packet{packets[1], packets[0]}
 	}
 
-	result := a.FirstFragmentAction.Apply(packets[0])
-	result = append(result, a.SecondFragmentAction.Apply(packets[1])...)
-	return result
+	if lpackets, err = a.FirstFragmentAction.Apply(packets[0]); err != nil {
+		return nil, err
+	}
+
+	if rpackets, err = a.SecondFragmentAction.Apply(packets[1]); err != nil {
+		return nil, err
+	}
+
+	return append(lpackets, rpackets...), nil
 }
 
 func FragmentTCPSegment(packet gopacket.Packet, fragSize int) []gopacket.Packet {
@@ -63,7 +74,7 @@ func FragmentTCPSegment(packet gopacket.Packet, fragSize int) []gopacket.Packet 
 //
 // The first fragment will include up to (fragSize * 8) bytes of the IP packet's payload, and the second fragment will
 // include the rest.
-func FragmentIPPacket(packet gopacket.Packet, fragSize int) []gopacket.Packet {
+func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, error) {
 	if packet.NetworkLayer() == nil || packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {
 		return duplicate(packet)
 	}
@@ -79,7 +90,7 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) []gopacket.Packet {
 
 	// corner case: if fragSize is 0, just return the original packet.
 	if fragSize == 0 {
-		return []gopacket.Packet{packet}
+		return []gopacket.Packet{packet}, nil
 	}
 
 	// from this point on we can assume that the IP payload is _at least_ (fragSize*8) bytes long
@@ -124,7 +135,7 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) []gopacket.Packet {
 
 	second := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
 
-	return []gopacket.Packet{first, second}
+	return []gopacket.Packet{first, second}, nil
 }
 
 // VerifyIPv4Checksum verifies whether an IPv4 header's checksum field is correct.

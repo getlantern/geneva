@@ -79,7 +79,11 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 		if m, err := at.Matches(packet); err != nil {
 			return nil, fmt.Errorf("error matching action tree %d: %v", i, err)
 		} else if m {
-			packets = append(packets, at.Apply(packet)...)
+			result, err := at.Apply(packet)
+			if err != nil {
+				return nil, err
+			}
+			packets = append(packets, result...)
 		}
 	}
 

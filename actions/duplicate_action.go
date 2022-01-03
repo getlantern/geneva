@@ -13,20 +13,46 @@ type DuplicateAction struct {
 	Right Action
 }
 
-func duplicate(packet gopacket.Packet) []gopacket.Packet {
-	buf := make([]byte, 0, len(packet.Data()))
-	copy(buf, packet.Data())
-	p2 := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
-	return []gopacket.Packet{packet, p2}
+func duplicate(packet gopacket.Packet) ([]gopacket.Packet, error) {
+	pData := packet.Data()
+	buf := make([]byte, len(pData))
+	copy(buf, pData)
+
+	var firstLayer gopacket.Layer
+	for _, l := range packet.Layers() {
+		if l != nil {
+			firstLayer = l
+			break
+		}
+	}
+	if firstLayer == nil {
+		return nil, fmt.Errorf("packet has no parseable layers")
+	}
+
+	p2 := gopacket.NewPacket(buf, firstLayer.LayerType(), gopacket.Default)
+	return []gopacket.Packet{packet, p2}, nil
 }
 
 // Apply duplicates packet, returning zero or more potentially-modified packets.
 //
 // The number of returned packets depends on this action's sub-actions.
-func (a *DuplicateAction) Apply(packet gopacket.Packet) []gopacket.Packet {
-	duped := duplicate(packet)
-	packets := a.Left.Apply(duped[0])
-	return append(packets, a.Right.Apply(duped[1])...)
+func (a *DuplicateAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
+	var err error
+	var duped, lpackets, rpackets []gopacket.Packet
+
+	if duped, err = duplicate(packet); err != nil {
+		return nil, err
+	}
+
+	if lpackets, err = a.Left.Apply(duped[0]); err != nil {
+		return nil, err
+	}
+
+	if rpackets, err = a.Right.Apply(duped[1]); err != nil {
+		return nil, err
+	}
+
+	return append(lpackets, rpackets...), nil
 }
 
 // String returns a string representation of this Action.

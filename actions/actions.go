@@ -32,7 +32,7 @@ func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
 }
 
 // Apply applies this action tree to the packet, returning zero or more potentially-modified packets.
-func (at *ActionTree) Apply(packet gopacket.Packet) []gopacket.Packet {
+func (at *ActionTree) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 	return at.RootAction.Apply(packet)
 }
 
@@ -63,7 +63,7 @@ func ParseActionTree(s *scanner.Scanner) (*ActionTree, error) {
 // Action is implemented by any value that describes a Geneva action.
 type Action interface {
 	// Apply applies the action to the packet, returning zero or more potentially-modified packets.
-	Apply(gopacket.Packet) []gopacket.Packet
+	Apply(gopacket.Packet) ([]gopacket.Packet, error)
 	fmt.Stringer
 }
 

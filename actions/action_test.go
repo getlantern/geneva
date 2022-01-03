@@ -56,7 +56,10 @@ func TestSendAction(t *testing.T) {
 	pkt := gopacket.NewPacket(ping, layers.LayerTypeEthernet, gopacket.Default)
 
 	a := actions.SendAction{}
-	result := a.Apply(pkt)
+	result, err := a.Apply(pkt)
+	if err != nil {
+		t.Fatalf("Apply() failed: %v", err)
+	}
 
 	if len(result) == 0 {
 		t.Fatalf("no packet returned")
@@ -78,7 +81,10 @@ func TestDropAction(t *testing.T) {
 	pkt := gopacket.NewPacket(ping, layers.LayerTypeEthernet, gopacket.Default)
 
 	a := actions.DropAction{}
-	result := a.Apply(pkt)
+	result, err := a.Apply(pkt)
+	if err != nil {
+		t.Fatalf("Apply() failed: %v", err)
+	}
 
 	if len(result) != 0 {
 		t.Fatalf("drop action should never return anything")
@@ -94,7 +100,11 @@ func TestSimpleDuplicateAction(t *testing.T) {
 		t.Fatalf("ParseAction() got an error: %v", err)
 	}
 
-	result := a.Apply(pkt)
+	result, err := a.Apply(pkt)
+	if err != nil {
+		t.Fatalf("Apply() failed: %v", err)
+	}
+
 	if len(result) != 2 {
 		t.Fatalf("expected 2 packets, got %d", len(result))
 	}
@@ -109,7 +119,11 @@ func TestDuplicateActionDrop(t *testing.T) {
 		t.Fatalf("ParseAction() got an error: %v", err)
 	}
 
-	result := a.Apply(pkt)
+	result, err := a.Apply(pkt)
+	if err != nil {
+		t.Fatalf("Apply() failed: %v", err)
+	}
+
 	if len(result) != 1 {
 		t.Fatalf("expected 1 packet, got %d", len(result))
 	}
@@ -147,7 +161,11 @@ func TestFragmentAction(t *testing.T) {
 		t.Fatalf("ParseAction() got an error: %v", err)
 	}
 
-	result := a.Apply(pkt)
+	result, err := a.Apply(pkt)
+	if err != nil {
+		t.Fatalf("Apply() failed: %v", err)
+	}
+
 	if len(result) != 2 {
 		t.Fatalf("expected 2 packets, but got %d", len(result))
 	}

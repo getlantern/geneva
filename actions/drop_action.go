@@ -6,8 +6,8 @@ import "github.com/google/gopacket"
 type DropAction struct{}
 
 // Apply drops the given packet.
-func (a *DropAction) Apply(packet gopacket.Packet) []gopacket.Packet {
-	return []gopacket.Packet{}
+func (a *DropAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
+	return []gopacket.Packet{}, nil
 }
 
 // String returns a string representing the "drop" action.

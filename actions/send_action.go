@@ -6,8 +6,8 @@ import "github.com/google/gopacket"
 type SendAction struct{}
 
 // Apply returns the packet unchanged.
-func (a *SendAction) Apply(packet gopacket.Packet) []gopacket.Packet {
-	return []gopacket.Packet{packet}
+func (a *SendAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
+	return []gopacket.Packet{packet}, nil
 }
 
 // String returns a string representing the "send" action.

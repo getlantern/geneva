@@ -274,7 +274,7 @@ func VerifyTCPChecksum(ipHeader, tcpHeader, payload []byte) bool {
 
 // String returns a string representation of this Action.
 func (a *FragmentAction) String() string {
-	return fmt.Sprintf("fragment{%s:%d:%t}}(%s,%s)",
+	return fmt.Sprintf("fragment{%s:%d:%t}(%s,%s)",
 		a.Proto, a.FragSize, a.InOrder,
 		a.FirstFragmentAction,
 		a.SecondFragmentAction)

@@ -208,12 +208,7 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 // NewTCPTrigger creates a new TCP trigger.
 func NewTCPTrigger(field, value string, gas int) (*TCPTrigger, error) {
 	if field == "" {
-		return nil, fmt.Errorf("cannot create TCP trigger with empty field")
-	}
-
-	if value == "" {
-		return nil, fmt.Errorf("cannot create TCP trigger with empty value")
-		// XXX ...yes, you actually can, so empty values need to be handled.
+		return nil, errors.New("cannot create TCP trigger with empty field")
 	}
 
 	f, err := ParseTCPField(field)

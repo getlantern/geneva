@@ -81,7 +81,7 @@ func ParseAction(s *scanner.Scanner) (Action, error) {
 		return ParseFragmentAction(s)
 	}
 	if s.FindToken("tamper", true) {
-		return nil, fmt.Errorf("tamper action not yet implemented")
+		return ParseTamperAction(s)
 	}
 	if s.FindToken("drop", true) {
 		s.Advance(4)

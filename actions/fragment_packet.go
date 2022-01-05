@@ -26,6 +26,7 @@ type FragmentAction struct {
 	FragSize int
 	// InOrder specifies whether to return the fragments in order.
 	InOrder bool
+	overlap int
 	// FirstFragmentAction is the action to apply to the first fragment.
 	FirstFragmentAction Action
 	// SecondFragmentAction is the action to apply to the second fragment.
@@ -295,7 +296,7 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
-	if len(fields) != 3 {
+	if len(fields) < 3 {
 		return nil, errors.New("not enough fields for fragment rule at %d (got %d)", s.Pos(), len(fields))
 	}
 
@@ -321,7 +322,15 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 		return nil, errors.New("invalid fragment rule: %q is not a valid boolean", fields[2])
 	}
 
-	if _, err := s.Expect("("); err != nil {
+	if len(fields) == 4 {
+		overlap, err := strconv.ParseInt(fields[3], 10, 16)
+		if err != nil {
+			return nil, errors.New("invalid fragment rule: %q is not a valid overlap", fields[3])
+		}
+		action.overlap = int(overlap)
+	}
+
+	if _, err = s.Expect("("); err != nil {
 		action.FirstFragmentAction = &SendAction{}
 		action.SecondFragmentAction = &SendAction{}
 		return action, nil

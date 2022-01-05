@@ -312,7 +312,7 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 		return nil, errors.New("invalid fragment rule: %q is not a recognized protocol", fields[0])
 	}
 
-	ofs, err := strconv.ParseUint(fields[1], 10, 16)
+	ofs, err := strconv.ParseInt(fields[1], 10, 16)
 	if err != nil {
 		return nil, errors.New("invalid fragment rule: %q is not a valid offset", fields[1])
 	}

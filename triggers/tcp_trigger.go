@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getlantern/errors"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
@@ -48,7 +49,7 @@ func ParseTCPField(field string) (TCPField, error) {
 			return TCPField(i), nil
 		}
 	}
-	return TCPField(0), fmt.Errorf("invalid field name")
+	return TCPField(0), errors.New("unknown TCP field %s", field)
 }
 
 // TCPTrigger is a Trigger that matches on the TCP layer.
@@ -175,7 +176,7 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 
 	tmp, err := strconv.ParseUint(t.value, 0, 32)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err)
 	}
 
 	v := uint32(tmp)
@@ -201,22 +202,23 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 		return uint32(tcpLayer.Urgent) == v, nil
 	}
 
-	return false, fmt.Errorf("TCPTrigger.Matches(%s) is unimplemented", t.Field())
+	return false, errors.New("TCPTrigger.Matches(%s) is unimplemented", t.Field())
 }
 
 // NewTCPTrigger creates a new TCP trigger.
 func NewTCPTrigger(field, value string, gas int) (*TCPTrigger, error) {
 	if field == "" {
-		return nil, fmt.Errorf("invalid field")
+		return nil, fmt.Errorf("cannot create TCP trigger with empty field")
 	}
 
 	if value == "" {
-		return nil, fmt.Errorf("invalid value")
+		return nil, fmt.Errorf("cannot create TCP trigger with empty value")
+		// XXX ...yes, you actually can, so empty values need to be handled.
 	}
 
 	f, err := ParseTCPField(field)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	return &TCPTrigger{f, value, gas}, nil

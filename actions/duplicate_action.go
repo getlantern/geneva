@@ -3,6 +3,8 @@ package actions
 import (
 	"fmt"
 
+	"github.com/getlantern/errors"
+	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
 )
@@ -26,7 +28,7 @@ func duplicate(packet gopacket.Packet) ([]gopacket.Packet, error) {
 		}
 	}
 	if firstLayer == nil {
-		return nil, fmt.Errorf("packet has no parseable layers")
+		return nil, errors.New("duplicate: packet has no parseable layers")
 	}
 
 	p2 := gopacket.NewPacket(buf, firstLayer.LayerType(), gopacket.Default)
@@ -41,15 +43,15 @@ func (a *DuplicateAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 	var duped, lpackets, rpackets []gopacket.Packet
 
 	if duped, err = duplicate(packet); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	if lpackets, err = a.Left.Apply(duped[0]); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	if rpackets, err = a.Right.Apply(duped[1]); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	return append(lpackets, rpackets...), nil
@@ -74,24 +76,26 @@ func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.Left = &SendAction{}
 		} else {
-			return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
+			return nil, errors.New(
+				"invalid duplicate rule: error parsing first action: %v",
+				err)
 		}
 	}
 
 	if _, err = s.Expect(","); err != nil {
-		return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
+		return nil, errors.New("invalid duplicate rule: %v", internal.EOFUnexpected(err))
 	}
 
 	if action.Right, err = ParseAction(s); err != nil {
 		if c, err2 := s.Peek(); err2 == nil && c == ')' {
 			action.Right = &SendAction{}
 		} else {
-			return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
+			return nil, errors.New("invalid duplicate rule: %v", err)
 		}
 	}
 
 	if _, err = s.Expect(")"); err != nil {
-		return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
+		return nil, errors.New("invalid duplicate rule: %v", internal.EOFUnexpected(err))
 	}
 
 	return action, nil

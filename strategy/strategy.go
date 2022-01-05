@@ -30,6 +30,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/getlantern/errors"
 	"github.com/getlantern/geneva/actions"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
@@ -81,11 +82,11 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 	// could potentially keep the number of memcpy() operations down by lazily copying only when required.
 	for i, at := range forest {
 		if m, err := at.Matches(packet); err != nil {
-			return nil, fmt.Errorf("error matching action tree %d: %v", i, err)
+			return nil, errors.New("error matching action tree %d: %v", i, err)
 		} else if m {
 			result, err := at.Apply(packet)
 			if err != nil {
-				return nil, err
+				return nil, errors.Wrap(err)
 			}
 			packets = append(packets, result...)
 		} else {
@@ -115,7 +116,10 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 
 		inbound, err := actions.ParseActionTree(l)
 		if err != nil {
-			return nil, err
+			if err == io.EOF {
+				return st, nil
+			}
+			return nil, errors.Wrap(err)
 		}
 		st.Inbound = append(st.Inbound, inbound)
 		l.Chomp()
@@ -123,8 +127,11 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 
 	l.Chomp()
 	if _, err := l.Expect(`\/`); err != nil {
+		if err == io.EOF {
+			return st, nil
+		}
 		// okay fine, you've already used your free pass above, so now we'll fail hard.
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 	l.Chomp()
 
@@ -137,7 +144,7 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 
 		outbound, err := actions.ParseActionTree(l)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err)
 		}
 		st.Outbound = append(st.Outbound, outbound)
 	}

@@ -5,6 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getlantern/errors"
+
+	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
 	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
@@ -27,29 +30,31 @@ type Trigger interface {
 // If the string is malformed, and error will be returned instead.
 func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
 	if _, err := s.Expect("["); err != nil {
-		return nil, err
+		return nil, errors.Wrap(internal.EOFUnexpected(err))
 	}
 
 	str, err := s.Until(']')
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(internal.EOFUnexpected(err))
 	}
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
 	if len(fields) < 3 {
-		return nil, fmt.Errorf("invalid trigger format")
+		return nil, errors.New(
+			`trigger "[%s]" must have at least three fields (found %d)`,
+			str, len(fields))
 	}
 
 	if fields[0] == "" {
-		return nil, fmt.Errorf("invalid protocol")
+		return nil, errors.New(`trigger "[%s]" does not specify a protocol`, str)
 	}
 
 	gas := 0
 	if len(fields) == 4 {
 		gas, err = strconv.Atoi(fields[3])
 		if err != nil {
-			return nil, err
+			return nil, errors.New(`while parsing trigger "[%s]": %v`, str, err)
 		}
 	}
 
@@ -62,7 +67,7 @@ func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, errors.New(`while parsing trigger "[%s]": %v`, str, err)
 	}
 
 	return trigger, nil

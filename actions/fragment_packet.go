@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getlantern/errors"
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
@@ -48,7 +49,7 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	if len(packets) == 2 && !a.InOrder {
@@ -56,11 +57,11 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	}
 
 	if lpackets, err = a.FirstFragmentAction.Apply(packets[0]); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	if rpackets, err = a.SecondFragmentAction.Apply(packets[1]); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	return append(lpackets, rpackets...), nil
@@ -284,18 +285,18 @@ func (a *FragmentAction) String() string {
 // If the string is malformed, and error will be returned instead.
 func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	if _, err := s.Expect("fragment{"); err != nil {
-		return nil, fmt.Errorf("invalid fragment rule: %v", err)
+		return nil, errors.New("invalid fragment rule at %d: %v", s.Pos(), err)
 	}
 
 	str, err := s.Until('}')
 	if err != nil {
-		return nil, fmt.Errorf("invalid fragment rule: %v", err)
+		return nil, errors.New("invalid fragment rule at %d: %v", s.Pos(), err)
 	}
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
 	if len(fields) != 3 {
-		return nil, fmt.Errorf("invalid fragment rule: %v", err)
+		return nil, errors.New("not enough fields for fragment rule at %d (got %d)", s.Pos(), len(fields))
 	}
 
 	action := &FragmentAction{}
@@ -307,17 +308,17 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	case "udp":
 		action.Proto = "UDP"
 	default:
-		return nil, fmt.Errorf("invalid fragment rule: \"%s\" is not a recognized protocol", fields[0])
+		return nil, errors.New("invalid fragment rule: %q is not a recognized protocol", fields[0])
 	}
 
 	ofs, err := strconv.ParseUint(fields[1], 10, 16)
 	if err != nil {
-		return nil, fmt.Errorf("invalud fragment rule: \"%s\" is not a valid offset", fields[1])
+		return nil, errors.New("invalid fragment rule: %q is not a valid offset", fields[1])
 	}
 	action.FragSize = int(ofs)
 
 	if action.InOrder, err = strconv.ParseBool(fields[2]); err != nil {
-		return nil, fmt.Errorf("invalid fragment rule: \"%s\" is not a valid boolean", fields[2])
+		return nil, errors.New("invalid fragment rule: %q is not a valid boolean", fields[2])
 	}
 
 	if _, err := s.Expect("("); err != nil {
@@ -330,24 +331,24 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.FirstFragmentAction = &SendAction{}
 		} else {
-			return nil, fmt.Errorf("invalid fragment rule: %v", err)
+			return nil, errors.New("error parsing first action of fragment rule: %v", err)
 		}
 	}
 
 	if _, err = s.Expect(","); err != nil {
-		return nil, fmt.Errorf("invalid fragment() rule: %v", err)
+		return nil, errors.New("invalid fragment rule: %v", internal.EOFUnexpected(err))
 	}
 
 	if action.SecondFragmentAction, err = ParseAction(s); err != nil {
 		if c, err2 := s.Peek(); err2 == nil && c == ')' {
 			action.SecondFragmentAction = &SendAction{}
 		} else {
-			return nil, fmt.Errorf("invalid fragment rule: %v", err)
+			return nil, errors.New("error parsing second action of fragment rule: %v", err)
 		}
 	}
 
 	if _, err := s.Expect(")"); err != nil {
-		return nil, fmt.Errorf("invalid fragment rule: %v", err)
+		return nil, errors.New("invalid fragment rule: %v", internal.EOFUnexpected(err))
 	}
 
 	return action, nil

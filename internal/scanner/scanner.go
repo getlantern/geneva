@@ -1,9 +1,10 @@
 package scanner
 
 import (
-	"fmt"
 	"io"
 	"unicode"
+
+	"github.com/getlantern/errors"
 )
 
 // Scanner is a token scanner tailored to this library.
@@ -22,10 +23,14 @@ func NewScanner(source string) *Scanner {
 func (l *Scanner) tokenNotFound() error {
 	r, err := l.Peek()
 	if err != nil {
-		return err
+		return errors.Wrap(err)
 	}
 
-	return fmt.Errorf(`token "%c" not recognized at char %d`, r, l.currentPosition)
+	return errors.New(`token %q not recognized at char %d`, r, l.currentPosition)
+}
+
+func (l *Scanner) Pos() int {
+	return l.currentPosition
 }
 
 // Peek returns the next rune without consuming it. It returns io.EOF if the scanner is at the end of the source.
@@ -40,7 +45,7 @@ func (l *Scanner) Peek() (rune, error) {
 func (l *Scanner) Pop() (rune, error) {
 	b, err := l.Peek()
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err)
 	}
 
 	l.currentPosition++
@@ -57,7 +62,7 @@ func (l *Scanner) Expect(token string) (string, error) {
 
 	for i, c := range token {
 		if l.rest[l.currentPosition+i] != c {
-			return "", fmt.Errorf(`expected token "%s" not found at position %d`, token, l.currentPosition)
+			return "", errors.New("expected token %q not found at position %d", token, l.currentPosition)
 		}
 	}
 	l.currentPosition += len(token)

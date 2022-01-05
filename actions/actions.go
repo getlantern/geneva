@@ -3,6 +3,8 @@ package actions
 import (
 	"fmt"
 
+	"github.com/getlantern/errors"
+	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/getlantern/geneva/triggers"
 	"github.com/google/gopacket"
@@ -28,7 +30,8 @@ func (at *ActionTree) String() string {
 
 // Matches returns whether this action tree's trigger matches the packet.
 func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
-	return at.Trigger.Matches(packet)
+	r, err := at.Trigger.Matches(packet)
+	return r, errors.Wrap(err)
 }
 
 // Apply applies this action tree to the packet, returning zero or more potentially-modified packets.
@@ -40,21 +43,22 @@ func (at *ActionTree) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 func ParseActionTree(s *scanner.Scanner) (*ActionTree, error) {
 	trigger, err := triggers.ParseTrigger(s)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	at := &ActionTree{trigger, nil}
 
 	if _, err := s.Expect("-"); err != nil {
-		return nil, err
+		return nil, errors.Wrap(internal.EOFUnexpected(err))
 	}
 
 	at.RootAction, err = ParseAction(s)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	if _, err := s.Expect("-|"); err != nil {
+		return nil, errors.Wrap(internal.EOFUnexpected(err))
 	}
 
 	return at, nil
@@ -88,5 +92,5 @@ func ParseAction(s *scanner.Scanner) (Action, error) {
 		return DefaultSendAction, nil
 	}
 
-	return nil, fmt.Errorf("invalid action")
+	return nil, errors.New("invalid action at %d", s.Pos())
 }

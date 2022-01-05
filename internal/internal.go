@@ -1,5 +1,7 @@
 package internal
 
+import "io"
+
 type OnesComplementChecksum struct {
 	chksum uint16
 }
@@ -15,4 +17,11 @@ func (c *OnesComplementChecksum) Add(n uint16) uint16 {
 
 func (c *OnesComplementChecksum) Finalize() uint16 {
 	return ^c.chksum
+}
+
+func EOFUnexpected(err error) error {
+	if err == io.EOF {
+		return io.ErrUnexpectedEOF
+	}
+	return err
 }

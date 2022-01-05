@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getlantern/errors"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
@@ -40,7 +41,7 @@ func ParseIPField(field string) (IPField, error) {
 			return IPField(i), nil
 		}
 	}
-	return IPField(0), fmt.Errorf("invalid field name")
+	return IPField(0), errors.New("unknown IP field %q", field)
 }
 
 // IPTrigger is a Trigger that matches on the IP layer.
@@ -116,7 +117,7 @@ func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 	// The rest of the triggers work on numbers.
 	tmp, err := strconv.ParseUint(t.value, 0, 16)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err)
 	}
 
 	v := uint16(tmp)
@@ -141,19 +142,25 @@ func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 	case "chksum":
 		return (uint16(ipLayer.Checksum) == v), nil
 	default:
-		return false, fmt.Errorf("IPTrigger.Matches(%s) is unimplemented", t.Field())
+		return false, errors.New("IPTrigger.Matches(%s) is unimplemented", t.Field())
 	}
 }
 
 // NewIPTrigger creates a new IP trigger.
 func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
+	if field == "" {
+		return nil, errors.New("cannot create IP trigger with empty field")
+	}
+
 	if value == "" {
-		return nil, fmt.Errorf("invalid field value")
+		return nil, errors.New("cannot create IP trigger with empty value")
+		// XXX and just like with TCP triggers, this is a false statement
+		// that needs to be fixed.
 	}
 
 	f, err := ParseIPField(field)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err)
 	}
 
 	return &IPTrigger{f, value, gas}, nil

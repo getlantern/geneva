@@ -59,19 +59,39 @@ func (a *DuplicateAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 
 // String returns a string representation of this Action.
 func (a *DuplicateAction) String() string {
-	return fmt.Sprintf("duplicate(%s,%s)", a.Left, a.Right)
+	actions := [2]string{"", ""}
+	if _, ok := a.Left.(*SendAction); !ok {
+		actions[0] = a.Left.String()
+	}
+	if _, ok := a.Right.(*SendAction); !ok {
+		actions[1] = a.Right.String()
+	}
+
+	var actStr string
+	if len(actions[0])+len(actions[1]) > 0 {
+		actStr = fmt.Sprintf("(%s,%s)", actions[0], actions[1])
+	}
+
+	return fmt.Sprintf("duplicate%s", actStr)
 }
 
 // ParseDuplicateAction parses a string representation of a "duplicate" action.
 // If the string is malformed, and error will be returned instead.
 func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 	var err error
+	action := &DuplicateAction{}
 
-	if _, err = s.Expect("duplicate("); err != nil {
-		return nil, fmt.Errorf("invalid duplicate() rule: %v", err)
+	if _, err = s.Expect("duplicate"); err != nil {
+		return nil, errors.New("invalid duplicate rule: %v", internal.EOFUnexpected(err))
 	}
 
-	action := &DuplicateAction{}
+	// rules can omit all arguments, in which case all actions are assumed to be 'send' actions
+	if _, err = s.Expect("("); err != nil {
+		action.Left = &SendAction{}
+		action.Right = &SendAction{}
+		return action, nil
+	}
+
 	if action.Left, err = ParseAction(s); err != nil {
 		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.Left = &SendAction{}

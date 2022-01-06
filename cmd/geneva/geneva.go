@@ -79,8 +79,7 @@ func validate(s string) error {
 		return cli.Exit(fmt.Sprintf("invalid strategy: %v\n", err), 1)
 	}
 
-	fmt.Println("strategy is well-formed!")
-	fmt.Printf("parsed as: \"%s\"\n", strategy)
+	fmt.Println(strategy)
 
 	return nil
 }

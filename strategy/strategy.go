@@ -76,15 +76,23 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 
 	packets := make([]gopacket.Packet, 0, 2)
 
-	// XXX: here's the thing: the paper mentions that each action tree in a forest gets "its own fresh copy of the
-	// original packet", so we should either copy it here before giving it to each action tree, or ensure that any
-	// action that modifies the packet makes a copy first. The former would be easier to implement, while the latter
-	// could potentially keep the number of memcpy() operations down by lazily copying only when required.
 	for i, at := range forest {
-		if m, err := at.Matches(packet); err != nil {
+		// Each action tree in a forest must get a "fresh" copy of the original packet.
+		// That said, we try to avoid an extra memory copy in the (highly likely) event that each forest
+		// consists of a single action tree.
+		pkt := packet
+		if len(forest) > 1 {
+			// no idea why we'd ever get a packet with no layers, but this is probably better than a panic.
+			if layers := packet.Layers(); len(layers) > 0 {
+				opts := gopacket.DecodeOptions{}
+				pkt = gopacket.NewPacket(packet.Data(), layers[0].LayerType(), opts)
+			}
+		}
+
+		if m, err := at.Matches(pkt); err != nil {
 			return nil, errors.New("error matching action tree %d: %v", i, err)
 		} else if m {
-			result, err := at.Apply(packet)
+			result, err := at.Apply(pkt)
 			if err != nil {
 				return nil, errors.Wrap(err)
 			}

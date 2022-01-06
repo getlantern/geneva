@@ -276,10 +276,21 @@ func VerifyTCPChecksum(ipHeader, tcpHeader, payload []byte) bool {
 
 // String returns a string representation of this Action.
 func (a *FragmentAction) String() string {
-	return fmt.Sprintf("fragment{%s:%d:%t}(%s,%s)",
-		a.Proto, a.FragSize, a.InOrder,
-		a.FirstFragmentAction,
-		a.SecondFragmentAction)
+	actions := [2]string{"", ""}
+	if _, ok := a.FirstFragmentAction.(*SendAction); !ok {
+		actions[0] = a.FirstFragmentAction.String()
+	}
+	if _, ok := a.SecondFragmentAction.(*SendAction); !ok {
+		actions[1] = a.SecondFragmentAction.String()
+	}
+
+	var actStr string
+	if len(actions[0])+len(actions[1]) > 0 {
+		actStr = fmt.Sprintf("(%s,%s)", actions[0], actions[1])
+	}
+
+	return fmt.Sprintf("fragment{%s:%d:%t}%s",
+		a.Proto, a.FragSize, a.InOrder, actStr)
 }
 
 // ParseFragmentAction parses a string representation of a "fragment" action.

@@ -155,7 +155,7 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 	}
 
 	if fragSize == -1 || (fragSize*8)%8 > plen || plen <= 8 {
-		fragSize = (plen / 2) % 8
+		fragSize = plen / 2 / 8
 	}
 
 	// corner case: if fragSize is 0, just return the original packet.

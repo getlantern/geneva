@@ -100,20 +100,28 @@ func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet
 	 * Strangely, all the manual bit-banging below was easier than dealing with creating packets using gopacket.
 	 */
 
+	ofs := len(packet.Data()) - len(packet.NetworkLayer().LayerContents()) - len(packet.NetworkLayer().LayerPayload())
+	if ofs < 0 {
+		// something bad has happened, so let's bail.
+		return nil, errors.New("error calculating offset to network layer")
+	}
+
 	// create the first fragment.
 	f1Len := headersLen + fragSize
 	buf := make([]byte, f1Len)
 	copy(buf, packet.Data()[:f1Len])
 
+	ipv4Buf := buf[ofs:]
+
 	// fix up the IP header's Total Length field and checksum
-	binary.BigEndian.PutUint16(buf[2:], uint16(f1Len))
-	ipHdrLen := uint16(buf[0]&0x0f) * 4
-	ComputeIPv4Checksum(buf[:ipHdrLen])
+	binary.BigEndian.PutUint16(ipv4Buf[2:], uint16(f1Len-ofs))
+	ipHdrLen := uint16(ipv4Buf[0]&0x0f) * 4
+	ComputeIPv4Checksum(ipv4Buf[:ipHdrLen])
 
-	chksum := ComputeTCPChecksum(buf[:ipHdrLen], buf[ipHdrLen:headersLen], buf[headersLen:])
-	binary.BigEndian.PutUint16(buf[ipHdrLen+16:], chksum)
+	chksum := ComputeTCPChecksum(ipv4Buf[:ipHdrLen], ipv4Buf[ipHdrLen:headersLen-ofs], ipv4Buf[headersLen-ofs:])
+	binary.BigEndian.PutUint16(ipv4Buf[ipHdrLen+16:], chksum)
 
-	first := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
+	first := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
 
 	// create the second fragment.
 	f2Len := headersLen + tcpPayloadLen - fragSize
@@ -121,21 +129,23 @@ func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet
 	copy(buf, packet.Data()[:headersLen])
 	copy(buf[headersLen:], packet.Data()[headersLen+fragSize:])
 
+	ipv4Buf = buf[ofs:]
+
 	// fix up the IP header's Total Length field and checksum
-	binary.BigEndian.PutUint16(buf[2:], uint16(f2Len))
-	ComputeIPv4Checksum(buf[:ipHdrLen])
+	binary.BigEndian.PutUint16(ipv4Buf[2:], uint16(f2Len-ofs))
+	ComputeIPv4Checksum(ipv4Buf[:ipHdrLen])
 
 	// fix up the TCP sequence number. Excitingly, Go does integer wrapping, so we don't have to.
-	tcp := buf[ipHdrLen:]
+	tcp := ipv4Buf[ipHdrLen:]
 	seqNum := binary.BigEndian.Uint32(tcp[4:])
 	seqNum += uint32(fragSize)
 	binary.BigEndian.PutUint32(tcp[4:], seqNum)
 
 	// fix up the TCP checksum
-	chksum = ComputeTCPChecksum(buf[:ipHdrLen], buf[ipHdrLen:headersLen], buf[headersLen:])
-	binary.BigEndian.PutUint16(buf[ipHdrLen+16:], chksum)
+	chksum = ComputeTCPChecksum(ipv4Buf[:ipHdrLen], ipv4Buf[ipHdrLen:headersLen-ofs], ipv4Buf[headersLen-ofs:])
+	binary.BigEndian.PutUint16(ipv4Buf[ipHdrLen+16:], chksum)
 
-	second := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
+	second := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
 
 	return []gopacket.Packet{first, second}, nil
 }

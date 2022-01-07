@@ -318,139 +318,121 @@ func TestFragmentActionIP(t *testing.T) {
 	}
 }
 
-func TestFragmentActionTCPCutInHalf(t *testing.T) {
-	pkt := gopacket.NewPacket(ssh, layers.LayerTypeIPv4, gopacket.Default)
-	pktIPv4Layer := pkt.NetworkLayer().(*layers.IPv4)
-	pktTCPLayer := pkt.TransportLayer().(*layers.TCP)
+type tcpFragmentResult struct {
+	frag          gopacket.Packet
+	ip4Len        uint16
+	ipChecksum    uint16
+	tcpPayloadLen uint16
+}
 
-	fragSize := -1
-	str := fmt.Sprintf("fragment{TCP:%d:true}", fragSize)
+func VerifyTCPFragment(t *testing.T, fragIndex int, result *tcpFragmentResult) {
+	packetDumpLogged := false
 
-	l := scanner.NewScanner(str)
-	a, err := actions.ParseAction(l)
-	if err != nil {
-		t.Fatalf("ParseAction() got an error: %v", err)
+	// this is just so that we only print out the packet dump once--instead of every time an error
+	// occurs--and only if we actually encounter an error.
+	dump := func() {
+		if !packetDumpLogged {
+			t.Log(result.frag.Dump())
+			packetDumpLogged = true
+		}
 	}
 
-	result, err := a.Apply(pkt)
-	if err != nil {
-		t.Fatalf("Apply() failed: %v", err)
+	if l := result.frag.ErrorLayer(); l != nil {
+		dump()
+		t.Fatalf("failed to decode fragment %d: %v", fragIndex, l.Error())
 	}
 
-	if len(result) != 2 {
-		t.Fatalf("expected 2 packets, but got %d", len(result))
+	ipLayer := result.frag.NetworkLayer().(*layers.IPv4)
+
+	if !actions.VerifyIPv4Checksum(ipLayer.Contents) {
+		dump()
+		t.Fatalf("fragment %d checksum is invalid: %#04x", fragIndex, ipLayer.Checksum)
 	}
 
-	expected := []ipFragmentResult{
-		{
-			result[0],
-			0, // This is TCP fragmentation, not IP, so MF will not be set in the IP header
-			0,
-			uint16(len(pktTCPLayer.Payload) / 2),
-		},
-		{
-			result[1],
-			0,
-			uint16(len(pktTCPLayer.Payload) / 2),
-			uint16(len(pktTCPLayer.Payload)) - uint16(len(pktTCPLayer.Payload)/2),
-		},
+	if ipLayer.Length != result.ip4Len {
+		dump()
+		t.Fatalf("fragment %d IP header length: expected %d, got %d",
+			fragIndex, result.ip4Len, ipLayer.Length)
 	}
 
-	for i, e := range expected {
-		VerifyIPFragment(t, pktIPv4Layer.Checksum, i, &e)
+	if len(ipLayer.Contents)+len(ipLayer.Payload) != int(ipLayer.Length) {
+		dump()
+		t.Fatalf("fragment %d IP total length: expected %d, got %d",
+			fragIndex, ipLayer.Length, len(result.frag.Data()))
+	}
+
+	tcpLayer := result.frag.TransportLayer().(*layers.TCP)
+	if len(tcpLayer.Payload) != int(result.tcpPayloadLen) {
+		dump()
+		t.Fatalf("fragment %d TCP payload length: expected %d, got %d",
+			fragIndex, result.tcpPayloadLen, len(tcpLayer.Payload))
 	}
 }
+
 func TestFragmentActionTCP(t *testing.T) {
-	pkt := gopacket.NewPacket(ssh, layers.LayerTypeIPv4, gopacket.Default)
-	pktIPv4Layer := pkt.NetworkLayer().(*layers.IPv4)
-	pktTCPLayer := pkt.TransportLayer().(*layers.TCP)
-
-	fragSize := uint16(8)
-	str := fmt.Sprintf("fragment{TCP:%d:true}", fragSize)
-
-	l := scanner.NewScanner(str)
-	a, err := actions.ParseAction(l)
-	if err != nil {
-		t.Fatalf("ParseAction() got an error: %v", err)
-	}
-
-	result, err := a.Apply(pkt)
-	if err != nil {
-		t.Fatalf("Apply() failed: %v", err)
-	}
-
-	if len(result) != 2 {
-		t.Fatalf("expected 2 packets, but got %d", len(result))
-	}
-
-	expected := []struct {
-		packetDumpLogged bool
-		frag             gopacket.Packet
-		ip4Len           uint16
-		tcpPayloadLen    uint16
-		ipChecksum       uint16
+	tests := []struct {
+		pkt            []byte
+		firstLayerType gopacket.LayerType
+		fragSize       int
 	}{
-		{
-			false,
-			result[0],
-			pktIPv4Layer.Length - uint16(len(pktTCPLayer.Payload)) + fragSize,
-			fragSize,
-			0x6141,
-		},
-		{
-			false,
-			result[1],
-			pktIPv4Layer.Length - fragSize,
-			uint16(len(pktTCPLayer.Payload)) - fragSize,
-			0,
-		},
+		{ssh, layers.LayerTypeIPv4, 8},
+		{ssh, layers.LayerTypeIPv4, 13},
+		{ssh, layers.LayerTypeIPv4, -1},
+		{sshWithLinkLayer, layers.LayerTypeEthernet, 8},
+		{sshWithLinkLayer, layers.LayerTypeEthernet, -1},
 	}
 
-	for i, e := range expected {
-		// this is just so that we only print out the packet dump once--instead of every time an error
-		// occurs--and only if we actually encounter an error.
-		dump := func() {
-			if !e.packetDumpLogged {
-				t.Log("-------------------- ORIGINAL PACKET --------------------")
-				t.Log(pkt.Dump())
-				t.Log(pkt.String())
-				t.Logf("---------------------- FRAGMENT %d ----------------------", i)
-				t.Log(e.frag.Dump())
-				e.packetDumpLogged = true
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("layer %s frag %d", tc.firstLayerType, tc.fragSize), func(t *testing.T) {
+			pkt := gopacket.NewPacket(tc.pkt, tc.firstLayerType, gopacket.Default)
+			pktIPv4Layer := pkt.NetworkLayer().(*layers.IPv4)
+			pktTCPLayer := pkt.TransportLayer().(*layers.TCP)
+
+			str := fmt.Sprintf("fragment{TCP:%d:true}", tc.fragSize)
+
+			l := scanner.NewScanner(str)
+			a, err := actions.ParseAction(l)
+			if err != nil {
+				t.Fatalf("ParseAction() got an error: %v", err)
 			}
-		}
 
-		if l := e.frag.ErrorLayer(); l != nil {
-			dump()
-			t.Fatalf("failed to decode fragment %d: %v", i, l.Error())
-		}
+			result, err := a.Apply(pkt)
+			if err != nil {
+				t.Fatalf("Apply() failed: %v", err)
+			}
 
-		layer := e.frag.NetworkLayer().(*layers.IPv4)
+			if len(result) != 2 {
+				t.Fatalf("expected 2 packets, but got %d", len(result))
+			}
 
-		if !actions.VerifyIPv4Checksum(layer.Contents) {
-			dump()
-			t.Fatalf("fragment %d checksum is invalid: %#04x", i, layer.Checksum)
-		}
+			var actualFragSize uint16
+			if tc.fragSize == -1 {
+				actualFragSize = uint16(len(pktTCPLayer.Payload)) / 2
+			} else {
+				actualFragSize = uint16(tc.fragSize)
+			}
 
-		if layer.Length != e.ip4Len {
-			dump()
-			t.Fatalf("fragment %d packet length: expected %d, got %d", i, e.ip4Len, layer.Length)
-		}
+			expected := []tcpFragmentResult{
+				{
+					result[0],
+					pktIPv4Layer.Length - uint16(len(pktTCPLayer.Payload)) + actualFragSize,
+					0x6141,
+					actualFragSize,
+				},
+				{
+					result[1],
+					pktIPv4Layer.Length - actualFragSize,
+					0,
+					uint16(len(pktTCPLayer.Payload)) - actualFragSize,
+				},
+			}
 
-		tcpLayer := e.frag.TransportLayer().(*layers.TCP)
-		if len(tcpLayer.Payload) != int(e.tcpPayloadLen) {
-			dump()
-			t.Fatalf("fragment %d TCP payload length: expected %d, got %d",
-				i, e.tcpPayloadLen, len(tcpLayer.Payload))
-		}
-
-		if len(e.frag.Data()) != int(layer.Length) {
-			dump()
-			t.Fatalf("fragment %d IP total length: expected %d, got %d", i, layer.Length, len(e.frag.Data()))
-		}
-
-		// t.Log(e.frag.Dump())
-		// t.Logf("fragment %d TCP checksum: %#x", i, tcpLayer.Checksum)
+			for i, e := range expected {
+				t.Log("===== Original Packet =====")
+				t.Log(pkt.Dump())
+				VerifyTCPFragment(t, i, &e)
+			}
+		})
 	}
 }
 

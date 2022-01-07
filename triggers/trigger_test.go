@@ -49,7 +49,6 @@ func TestParseTriggerFailure(t *testing.T) {
 		"[TCP:sport",
 		"[TCP:sport]",
 		"[TCP:sport:",
-		"[TCP:sport:]",
 		"[TCP:sport:1",
 		"[TCP:sport:1:",
 		"[TCP:sport:1:]",
@@ -72,7 +71,7 @@ func TestParseTriggerFailure(t *testing.T) {
 			l := scanner.NewScanner(tc)
 			_, err := triggers.ParseTrigger(l)
 			if err == nil {
-				t.Fatalf("ParseTrigger() did not return an error when it should have")
+				t.Error("ParseTrigger() did not return an error when it should have")
 			}
 		})
 	}

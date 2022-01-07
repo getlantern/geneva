@@ -110,7 +110,7 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 // If the string is malformed, and error will be returned instead.
 func ParseStrategy(strategy string) (*Strategy, error) {
 	// inbound-tree \/ outbound-tree
-	l := scanner.NewScanner(strings.TrimSpace(strategy))
+	s := scanner.NewScanner(strings.TrimSpace(strategy))
 
 	st := &Strategy{
 		make([]*actions.ActionTree, 0, 1),
@@ -118,11 +118,11 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 	}
 
 	for {
-		if l.FindToken(`\/`, true) {
+		if s.FindToken(`\/`, true) {
 			break
 		}
 
-		inbound, err := actions.ParseActionTree(l)
+		inbound, err := actions.ParseActionTree(s)
 		if err != nil {
 			if err == io.EOF {
 				return st, nil
@@ -130,27 +130,32 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 			return nil, errors.Wrap(err)
 		}
 		st.Inbound = append(st.Inbound, inbound)
-		l.Chomp()
+		s.Chomp()
+
+		if _, err = s.Peek(); err == io.EOF {
+			// there is no outbound strategy, and this strategy didn't end with the \/ delimiter.
+			return st, nil
+		}
 	}
 
-	l.Chomp()
-	if _, err := l.Expect(`\/`); err != nil {
+	s.Chomp()
+	if _, err := s.Expect(`\/`); err != nil {
 		if err == io.EOF {
 			return st, nil
 		}
 		// okay fine, you've already used your free pass above, so now we'll fail hard.
 		return nil, errors.Wrap(err)
 	}
-	l.Chomp()
+	s.Chomp()
 
 	for {
 		// before we try to parse the outbound strategy, let's first make sure there's one there at all.
-		if _, err := l.Peek(); err != nil && err == io.EOF {
+		if _, err := s.Peek(); err != nil && err == io.EOF {
 			// looks like we don't have an outbound strategy, so we're done!
 			break
 		}
 
-		outbound, err := actions.ParseActionTree(l)
+		outbound, err := actions.ParseActionTree(s)
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}

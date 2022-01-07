@@ -165,45 +165,54 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 
 	// from this point on we can assume that the IP payload is _at least_ (fragSize*8) bytes long
 
+	ofs := len(packet.Data()) - len(packet.NetworkLayer().LayerContents()) - len(packet.NetworkLayer().LayerPayload())
+	if ofs < 0 {
+		// something bad has happened, so let's bail.
+		return nil, errors.New("error calculating offset to network layer")
+	}
+
 	buf := make([]byte, len(packet.Data()))
 	copy(buf, packet.Data())
+	ipv4Buf := buf[ofs:]
 
-	hdrLen := uint16((buf[0] & 0x0f) * 4)
-	payloadLen := binary.BigEndian.Uint16(buf[2:]) - hdrLen
+	hdrLen := uint16((ipv4Buf[0] & 0x0f) * 4)
+	payloadLen := binary.BigEndian.Uint16(ipv4Buf[2:]) - hdrLen
 
 	// fix up the fragment size to a multiple of 8 to satisfy fragment offset value
 	offset := uint16((fragSize * 8))
 
 	// update the total length of the first fragmented packet
-	binary.BigEndian.PutUint16(buf[2:], hdrLen+offset)
+	binary.BigEndian.PutUint16(ipv4Buf[2:], hdrLen+offset)
 
 	// set the More Fragments bit, and make the fragment offset 0
-	flagsAndFrags := (binary.BigEndian.Uint16(buf[6:]) | 0x20) & 0xe0
-	binary.LittleEndian.PutUint16(buf[6:], flagsAndFrags)
+	flagsAndFrags := (binary.BigEndian.Uint16(ipv4Buf[6:]) | 0x20) & 0xe0
+	binary.LittleEndian.PutUint16(ipv4Buf[6:], flagsAndFrags)
 
-	ComputeIPv4Checksum(buf[:hdrLen])
+	ComputeIPv4Checksum(ipv4Buf[:hdrLen])
 
 	// slice off everything past the first fragment's end
-	buf = buf[:hdrLen+offset]
+	buf = buf[:uint16(ofs)+hdrLen+offset]
 
-	first := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
+	first := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
 
 	// now start on the second fragment.
 	// First copy the old IP header as-is, then copy just the second fragment's payload right after.
 	buf = make([]byte, len(packet.Data())-int(offset))
-	copy(buf, packet.Data()[:hdrLen])
-	copy(buf[hdrLen:], packet.Data()[hdrLen+(offset):])
+	copy(buf, packet.Data()[:uint16(ofs)+hdrLen])
+
+	ipv4Buf = buf[ofs:]
+	copy(ipv4Buf[hdrLen:], packet.Data()[uint16(ofs)+hdrLen+offset:])
 
 	// fix up the length
-	binary.BigEndian.PutUint16(buf[2:], hdrLen+payloadLen-offset)
+	binary.BigEndian.PutUint16(ipv4Buf[2:], hdrLen+payloadLen-offset)
 
 	// clear the MF bit and set the fragment offset appropriately
-	flagsAndFrags = (binary.BigEndian.Uint16(buf[6:]) & 0x40) + uint16(fragSize)
-	binary.BigEndian.PutUint16(buf[6:], flagsAndFrags)
+	flagsAndFrags = (binary.BigEndian.Uint16(ipv4Buf[6:]) & 0x40) + uint16(fragSize)
+	binary.BigEndian.PutUint16(ipv4Buf[6:], flagsAndFrags)
 
-	ComputeIPv4Checksum(buf[:hdrLen])
+	ComputeIPv4Checksum(ipv4Buf[:hdrLen])
 
-	second := gopacket.NewPacket(buf, layers.LayerTypeIPv4, gopacket.NoCopy)
+	second := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
 
 	return []gopacket.Packet{first, second}, nil
 }

@@ -523,19 +523,19 @@ func TestActionTreeNestedActions(t *testing.T) {
 	}
 }
 
-func TestActionSendElision(t *testing.T) {
+func TestActionCanonicalization(t *testing.T) {
 	tests := []struct {
-		elided   string
 		expected string
+		original string
 	}{
-		{"[TCP:flags:s]-duplicate(,)-|", "[TCP:flags:s]-duplicate(send,send)-|"},
-		{"[TCP:flags:s]-duplicate(drop,)-|", "[TCP:flags:s]-duplicate(drop,send)-|"},
-		{"[TCP:flags:s]-duplicate(,drop)-|", "[TCP:flags:s]-duplicate(send,drop)-|"},
-		{"[TCP:flags:s]-duplicate(duplicate(,),)-|", "[TCP:flags:s]-duplicate(duplicate(send,send),send)-|"},
+		{"[TCP:flags:S]-duplicate-|", "[TCP:flags:S]-duplicate(send,send)-|"},
+		{"[TCP:flags:S]-duplicate(drop,)-|", "[TCP:flags:S]-duplicate(drop,send)-|"},
+		{"[TCP:flags:S]-duplicate(,drop)-|", "[TCP:flags:S]-duplicate(send,drop)-|"},
+		{"[TCP:flags:S]-duplicate(duplicate,)-|", "[TCP:flags:S]-duplicate(duplicate(send,send),send)-|"},
 	}
-	for _, tc := range tests {
-		t.Run(fmt.Sprintf(`"%s"`, tc), func(t *testing.T) {
-			l := scanner.NewScanner(tc.elided)
+	for i, tc := range tests {
+		t.Run(fmt.Sprintf(`"idx%d"`, i), func(t *testing.T) {
+			l := scanner.NewScanner(tc.original)
 			a, err := actions.ParseActionTree(l)
 			if err != nil {
 				t.Fatalf("ParseActionTree() got an error: %v", err)

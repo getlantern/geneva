@@ -56,5 +56,5 @@ func ExampleParseStrategy() {
 	s, _ := strategy.ParseStrategy(str)
 
 	fmt.Printf("%s", s)
-	// Output: [TCP:flags:SA]-duplicate(send,send)-| [TCP:flags:PA]-duplicate(duplicate(send,drop),send)-| \/ [TCP:flags:S]-send-|
+	// Output: [TCP:flags:SA]-duplicate-| [TCP:flags:PA]-duplicate(duplicate(,drop),)-| \/ [TCP:flags:S]-send-|
 }

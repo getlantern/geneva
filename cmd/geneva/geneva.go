@@ -37,13 +37,6 @@ func main() {
 				Action:    dot,
 			},
 			{
-				Name:  "validate",
-				Usage: "validate that a strategy is well-formed",
-				Action: func(c *cli.Context) error {
-					return validate(c.Args().First())
-				},
-			},
-			{
 				Name:  "run-pcap",
 				Usage: "Run a PCAP file through a strategy and output the resulting packets in a new PCAP",
 				Flags: []cli.Flag{
@@ -66,6 +59,13 @@ func main() {
 					},
 				},
 				Action: run_pcap,
+			},
+			{
+				Name:  "validate",
+				Usage: "validate that a strategy is well-formed",
+				Action: func(c *cli.Context) error {
+					return validate(c.Args().First())
+				},
 			},
 		},
 	}

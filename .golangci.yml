@@ -1,0 +1,34 @@
+linters:
+  enable-all: true
+  disable:
+    # deprecated
+    - scopelint
+    - maligned
+    - golint
+    - interfacer
+
+    # annoying
+    - gochecknoglobals
+    - nolintlint
+    - varnamelen
+    - gomnd
+    - ireturn
+    - exhaustivestruct
+    - funlen
+    - forbidigo
+
+    - cyclop
+
+linters-settings:
+  misspell:
+    ignore-words:
+      - strat
+  nlreturn:
+    block-size: 2
+
+issues:
+  exclude-rules:
+    # False positive: https://github.com/kunwardeep/paralleltest/issues/8.
+    - linters:
+      - paralleltest
+      text: "does not use range value in test Run"

@@ -1,0 +1,27 @@
+[*]
+charset = utf-8
+indent_size = 4
+indent_style = space
+insert_final_newline = true
+max_line_length = 100
+tab_width = 8
+trim_trailing_whitespace = true
+
+[*.txt]
+max_line_length = 78
+
+[*.md]
+max_line_length = 100
+
+[{Makefile,{BSD,GNU}makefile,*.mk}]
+indent_size = 8
+indent_style = tab
+indent_width = 8
+
+[*.go]
+# Go may not have a line length limit, but I do. Otherwise, this
+# should(?) be the same as gofmt.
+indent_size = 8
+indent_style = tab
+max_line_length = 100
+tab_width = 8

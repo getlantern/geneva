@@ -9,11 +9,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func fatal(m interface{}) {
-	fmt.Fprintln(os.Stderr, m)
-	os.Exit(1)
-}
-
 func main() {
 	app := &cli.App{
 		Name:                   "geneva",
@@ -35,6 +30,22 @@ func main() {
 				},
 				ArgsUsage: "STRATEGY",
 				Action:    dot,
+			},
+			{
+				Name:  "intercept",
+				Usage: "Run a strategy on live network traffic",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "input",
+						Aliases: []string{"i"},
+						Value:   "strategy.txt",
+					},
+					&cli.StringFlag{
+						Name:    "interface",
+						Aliases: []string{"iface"},
+					},
+				},
+				Action: intercept,
 			},
 			{
 				Name:  "run-pcap",

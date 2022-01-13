@@ -72,7 +72,7 @@ func NewFlow(pkt gopacket.Packet) *Flow {
 	return flow
 }
 
-func run_pcap(c *cli.Context) error {
+func runPcap(c *cli.Context) error {
 	input := c.String("input")
 	output := c.String("output")
 	strat := c.Args().First()
@@ -99,27 +99,33 @@ func run_pcap(c *cli.Context) error {
 	if !c.Bool("force") {
 		flags |= os.O_EXCL
 	}
-	o, err := os.OpenFile(output, flags, 0644)
+
+	o, err := os.OpenFile(output, flags, 0o644)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("error opening %s: %v", input, err), 1)
 	}
 	defer o.Close()
 
 	w := pcapgo.NewWriter(o)
-	w.WriteFileHeader(65536, layers.LinkTypeEthernet)
+	if err = w.WriteFileHeader(65536, layers.LinkTypeEthernet); err != nil {
+		return cli.Exit(fmt.Sprintf("while writing file header: %v", err), 1)
+	}
 
 	// Set up the world's worst flow tracker
 	flows := make(FlowTable)
 
 	count := 0
 	outputCount := 0
+
 	for pkt := range source.Packets() {
 		flow := NewFlow(pkt)
 
-		var found *Flow
-		var dir strategy.Direction
-		var dirString string
-		var ok bool
+		var (
+			found     *Flow
+			dir       strategy.Direction
+			dirString string
+			ok        bool
+		)
 
 		if found, ok = flows[flow.checksum]; !ok {
 			flows[flow.checksum] = flow
@@ -146,6 +152,7 @@ func run_pcap(c *cli.Context) error {
 		if err != nil {
 			return cli.Exit(fmt.Sprintf("error applying strategy: %v", err), 1)
 		}
+
 		fmt.Printf("=> %d packet(s)\n", len(result))
 
 		for i, p := range result {
@@ -153,7 +160,10 @@ func run_pcap(c *cli.Context) error {
 				i,
 				pkt.Metadata().CaptureLength,
 				pkt.Metadata().Length, len(p.Data()))
-			w.WritePacket(pkt.Metadata().CaptureInfo, p.Data())
+
+			if err = w.WritePacket(pkt.Metadata().CaptureInfo, p.Data()); err != nil {
+				fmt.Fprintf(os.Stderr, "error writing packet: %v", err)
+			}
 			outputCount++
 		}
 		count++

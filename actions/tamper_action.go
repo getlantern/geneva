@@ -21,6 +21,7 @@ func (tm TamperMode) String() string {
 	case TamperAdd:
 		return "add"
 	}
+
 	return ""
 }
 
@@ -71,6 +72,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	if err != nil {
 		return nil, errors.New("invalid tamper rule: %v", err)
 	}
+
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
@@ -79,6 +81,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	}
 
 	action := &TamperAction{}
+
 	switch strings.ToLower(fields[0]) {
 	case "ip":
 		action.Proto = "IP"
@@ -104,7 +107,8 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 
 	if _, err := s.Expect("("); err != nil {
 		action.Action = &SendAction{}
-		return action, nil
+
+		return action, nil //nolint:nilerr
 	}
 
 	if action.Action, err = ParseAction(s); err != nil {

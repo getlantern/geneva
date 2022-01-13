@@ -12,6 +12,8 @@ import (
 )
 
 func TestParseTrigger(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]struct {
 		trigger string
 		want    reflect.Type
@@ -19,13 +21,19 @@ func TestParseTrigger(t *testing.T) {
 		"ip":  {"[IP:ttl:64]", reflect.TypeOf(&triggers.IPTrigger{})},
 		"tcp": {"[TCP:dport:443]", reflect.TypeOf(&triggers.TCPTrigger{})},
 	}
+
 	for name, tc := range tests {
+		tc := tc
+
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			l := scanner.NewScanner(tc.trigger)
 			trigger, err := triggers.ParseTrigger(l)
 			if err != nil {
 				t.Fatalf("ParseTrigger() got an error: %v", err)
 			}
+
 			if reflect.TypeOf(trigger) != tc.want {
 				t.Fatalf("expected type %s, got %T", tc.want, trigger)
 			}
@@ -34,6 +42,8 @@ func TestParseTrigger(t *testing.T) {
 }
 
 func TestParseTriggerFailure(t *testing.T) {
+	t.Parallel()
+
 	tests := []string{
 		"[",
 		"[TCP",
@@ -66,8 +76,13 @@ func TestParseTriggerFailure(t *testing.T) {
 		"[IP:ttl:1:]",
 		"[IP:ttl:1:4",
 	}
+
 	for _, tc := range tests {
+		tc := tc
+
 		t.Run(fmt.Sprintf(`"%s"`, tc), func(t *testing.T) {
+			t.Parallel()
+
 			l := scanner.NewScanner(tc)
 			_, err := triggers.ParseTrigger(l)
 			if err == nil {
@@ -78,15 +93,23 @@ func TestParseTriggerFailure(t *testing.T) {
 }
 
 func TestTriggersWithGas(t *testing.T) {
-	tests := map[string]struct {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
 		trigger string
 		want    int
 	}{
-		"ip":  {"[IP:ttl:64:2]", 2},
-		"tcp": {"[TCP:dport:1337:4]", 4},
+		{"ip", "[IP:ttl:64:2]", 2},
+		{"tcp", "[TCP:dport:1337:4]", 4},
 	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+
+	for _, tc := range tests {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			l := scanner.NewScanner(tc.trigger)
 			trigger, err := triggers.ParseTrigger(l)
 			if err != nil {
@@ -101,7 +124,9 @@ func TestTriggersWithGas(t *testing.T) {
 }
 
 func TestTCPStringify(t *testing.T) {
-	expected := "[TCP:sport:1337]"
+	t.Parallel()
+
+	expected := "[TCP:sport:1337]" // nolint:ifshort
 
 	trigger, err := triggers.NewTCPTrigger("sport", "1337", 0)
 	if err != nil {
@@ -114,13 +139,17 @@ func TestTCPStringify(t *testing.T) {
 }
 
 func TestInvalidTCPField(t *testing.T) {
+	t.Parallel()
+
 	if _, err := triggers.NewTCPTrigger("invalid", "12345", 0); err == nil {
 		t.Fatalf("expected field error")
 	}
 }
 
 func TestIPStringify(t *testing.T) {
-	expected := "[IP:ttl:64]"
+	t.Parallel()
+
+	expected := "[IP:ttl:64]" // nolint:ifshort
 
 	trigger, err := triggers.NewIPTrigger("ttl", "64", 0)
 	if err != nil {
@@ -133,12 +162,16 @@ func TestIPStringify(t *testing.T) {
 }
 
 func TestInvalidIPField(t *testing.T) {
+	t.Parallel()
+
 	if _, err := triggers.NewIPTrigger("invalid", "12345", 0); err == nil {
 		t.Fatalf("expected field error")
 	}
 }
 
 func TestIPTriggers(t *testing.T) {
+	t.Parallel()
+
 	ssh := []byte{
 		0x45, 0x00, 0x00, 0x49, 0x00, 0x00, 0x40, 0x00, 0x40, 0x06, 0xb5, 0x2d, 0xc0, 0xa8, 0x02, 0x30, 0xc0,
 		0xa8, 0x02, 0x01, 0xee, 0x3a, 0x00, 0x16, 0x6b, 0x8b, 0xad, 0x49, 0x9f, 0x7b, 0x50, 0xae, 0x80, 0x18,
@@ -185,7 +218,11 @@ func TestIPTriggers(t *testing.T) {
 	}
 
 	for _, tc := range tt {
+		tc := tc
+
 		t.Run(fmt.Sprintf(`"%s"`, tc.name), func(t *testing.T) {
+			t.Parallel()
+
 			trigger, _ := triggers.NewIPTrigger(tc.field, tc.value, 0)
 			if m, err := trigger.Matches(pkt); err != nil {
 				t.Fatalf("trigger.Matches() got an error: %v", err)
@@ -194,7 +231,6 @@ func TestIPTriggers(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func ExampleNewIPTrigger() {

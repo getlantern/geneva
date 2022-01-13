@@ -21,17 +21,21 @@ func duplicate(packet gopacket.Packet) ([]gopacket.Packet, error) {
 	copy(buf, pData)
 
 	var firstLayer gopacket.Layer
+
 	for _, l := range packet.Layers() {
 		if l != nil {
 			firstLayer = l
+
 			break
 		}
 	}
+
 	if firstLayer == nil {
 		return nil, errors.New("duplicate: packet has no parseable layers")
 	}
 
 	p2 := gopacket.NewPacket(buf, firstLayer.LayerType(), gopacket.Default)
+
 	return []gopacket.Packet{packet, p2}, nil
 }
 
@@ -39,8 +43,11 @@ func duplicate(packet gopacket.Packet) ([]gopacket.Packet, error) {
 //
 // The number of returned packets depends on this action's sub-actions.
 func (a *DuplicateAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
-	var err error
-	var duped, lpackets, rpackets []gopacket.Packet
+	var (
+		err                error
+		duped              []gopacket.Packet
+		lpackets, rpackets []gopacket.Packet
+	)
 
 	if duped, err = duplicate(packet); err != nil {
 		return nil, errors.Wrap(err)
@@ -63,6 +70,7 @@ func (a *DuplicateAction) String() string {
 	if _, ok := a.Left.(*SendAction); !ok {
 		actions[0] = a.Left.String()
 	}
+
 	if _, ok := a.Right.(*SendAction); !ok {
 		actions[1] = a.Right.String()
 	}
@@ -79,6 +87,7 @@ func (a *DuplicateAction) String() string {
 // If the string is malformed, and error will be returned instead.
 func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 	var err error
+
 	action := &DuplicateAction{}
 
 	if _, err = s.Expect("duplicate"); err != nil {
@@ -89,7 +98,8 @@ func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 	if _, err = s.Expect("("); err != nil {
 		action.Left = &SendAction{}
 		action.Right = &SendAction{}
-		return action, nil
+
+		return action, nil //nolint:nilerr
 	}
 
 	if action.Left, err = ParseAction(s); err != nil {

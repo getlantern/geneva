@@ -26,6 +26,7 @@
 package strategy
 
 import (
+	gerrors "errors"
 	"fmt"
 	"io"
 	"strings"
@@ -51,9 +52,9 @@ type Direction int
 func (d Direction) String() string {
 	if d == DirectionInbound {
 		return "inbound"
-	} else {
-		return "outbound"
 	}
+
+	return "outbound"
 }
 
 const (
@@ -89,6 +90,7 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 		// That said, we try to avoid an extra memory copy in the (highly likely) event that each forest
 		// consists of a single action tree.
 		pkt := packet
+
 		if len(forest) > 1 {
 			// no idea why we'd ever get a packet with no layers, but this is probably better than a panic.
 			if layers := packet.Layers(); len(layers) > 0 {
@@ -97,13 +99,17 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 			}
 		}
 
-		if m, err := at.Matches(pkt); err != nil {
+		m, err := at.Matches(pkt)
+		if err != nil {
 			return nil, errors.New("error matching action tree %d: %v", i, err)
-		} else if m {
+		}
+
+		if m {
 			result, err := at.Apply(pkt)
 			if err != nil {
 				return nil, errors.Wrap(err)
 			}
+
 			packets = append(packets, result...)
 		} else {
 			// When the action tree doesn't match, return the packet unharmed
@@ -132,33 +138,38 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 
 		outbound, err := actions.ParseActionTree(s)
 		if err != nil {
-			if err == io.EOF {
+			if gerrors.Is(err, io.EOF) {
 				return st, nil
 			}
+
 			return nil, errors.Wrap(err)
 		}
+
 		st.Outbound = append(st.Outbound, outbound)
+
 		s.Chomp()
 
-		if _, err = s.Peek(); err == io.EOF {
+		if _, err = s.Peek(); gerrors.Is(err, io.EOF) {
 			// there is no inbound strategy, and this strategy didn't end with the \/ delimiter.
 			return st, nil
 		}
 	}
 
 	s.Chomp()
+
 	if _, err := s.Expect(`\/`); err != nil {
-		if err == io.EOF {
+		if gerrors.Is(err, io.EOF) {
 			return st, nil
 		}
 		// okay fine, you've already used your free pass above, so now we'll fail hard.
 		return nil, errors.Wrap(err)
 	}
+
 	s.Chomp()
 
 	for {
 		// before we try to parse the inbound strategy, let's first make sure there's one there at all.
-		if _, err := s.Peek(); err != nil && err == io.EOF {
+		if _, err := s.Peek(); err != nil && gerrors.Is(err, io.EOF) {
 			// looks like we don't have an inbound strategy, so we're done!
 			break
 		}
@@ -167,6 +178,7 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}
+
 		st.Inbound = append(st.Inbound, inbound)
 	}
 
@@ -175,15 +187,19 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 
 // String returns a string representation of this strategy.
 func (s *Strategy) String() string {
-	var inbound, outbound []string
+	inbound := make([]string, 0, 1)
+	outbound := make([]string, 0, 1)
+
 	for _, st := range s.Inbound {
 		inbound = append(inbound, st.String())
 	}
+
 	i := strings.Join(inbound, " ")
 
 	for _, st := range s.Outbound {
 		outbound = append(outbound, st.String())
 	}
+
 	o := strings.Join(outbound, " ")
 
 	return strings.TrimSpace(fmt.Sprintf(`%s \/ %s`, o, i))

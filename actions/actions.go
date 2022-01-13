@@ -8,7 +8,9 @@ import (
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/getlantern/geneva/triggers"
 	"github.com/google/gopacket"
-	_ "github.com/google/gopacket/layers" // gopacket best practice
+
+	// gopacket best practice says import this, too.
+	_ "github.com/google/gopacket/layers"
 )
 
 // ActionTree represents a Geneva (trigger, action) pair.
@@ -36,7 +38,8 @@ func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
 
 // Apply applies this action tree to the packet, returning zero or more potentially-modified packets.
 func (at *ActionTree) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
-	return at.RootAction.Apply(packet)
+	r, err := at.RootAction.Apply(packet)
+	return r, errors.Wrap(err)
 }
 
 // ParseActionTree attempts to parse an action tree from its input.
@@ -77,18 +80,28 @@ func ParseAction(s *scanner.Scanner) (Action, error) {
 	if s.FindToken("duplicate", true) {
 		return ParseDuplicateAction(s)
 	}
+
 	if s.FindToken("fragment", true) {
 		return ParseFragmentAction(s)
 	}
+
 	if s.FindToken("tamper", true) {
 		return ParseTamperAction(s)
 	}
+
 	if s.FindToken("drop", true) {
-		s.Advance(4)
+		if err := s.Advance(4); err != nil {
+			return nil, errors.Wrap(internal.EOFUnexpected(err))
+		}
+
 		return DefaultDropAction, nil
 	}
+
 	if s.FindToken("send", true) {
-		s.Advance(4)
+		if err := s.Advance(4); err != nil {
+			return nil, errors.Wrap(internal.EOFUnexpected(err))
+		}
+
 		return DefaultSendAction, nil
 	}
 

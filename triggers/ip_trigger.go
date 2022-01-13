@@ -9,7 +9,6 @@ import (
 	"github.com/getlantern/errors"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
 )
 
 // IPField is the type of a supported IP field.
@@ -41,6 +40,7 @@ func ParseIPField(field string) (IPField, error) {
 			return IPField(i), nil
 		}
 	}
+
 	return IPField(0), errors.New("unknown IP field %q", field)
 }
 
@@ -57,6 +57,7 @@ func (t *IPTrigger) String() string {
 	if t.gas > 0 {
 		gas = fmt.Sprintf(":%d", t.gas)
 	}
+
 	return fmt.Sprintf("[%s:%s:%s%s]", t.Protocol(), t.Field(), t.value, gas)
 }
 
@@ -98,19 +99,25 @@ func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 				val |= layers.IPv4EvilBit
 			}
 		}
+
 		return (ipLayer.Flags == val), nil
 	case "src":
 		ipAddr := net.ParseIP(t.value)
-		return ipLayer.SrcIP.Equal(ipAddr), nil
+		return ipLayer.SrcIP.Equal(ipAddr), nil //nolint:nlreturn
 	case "dst":
 		ipAddr := net.ParseIP(t.value)
-		return ipLayer.DstIP.Equal(ipAddr), nil
+		return ipLayer.DstIP.Equal(ipAddr), nil //nolint:nlreturn
 	case "load":
+		if len(ipLayer.Payload) < len(t.value) {
+			return false, nil
+		}
+
 		for i, r := range []byte(t.value) {
 			if r != ipLayer.Payload[i] {
 				return false, nil
 			}
 		}
+
 		return true, nil
 	}
 
@@ -130,17 +137,17 @@ func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 	case "tos":
 		return (uint16(ipLayer.TOS) == v), nil
 	case "len":
-		return (uint16(ipLayer.Length) == v), nil
+		return (ipLayer.Length == v), nil
 	case "id":
-		return (uint16(ipLayer.Id) == v), nil
+		return (ipLayer.Id == v), nil
 	case "frag":
-		return (uint16(ipLayer.FragOffset) == v), nil
+		return (ipLayer.FragOffset == v), nil
 	case "ttl":
 		return (uint16(ipLayer.TTL) == v), nil
 	case "proto":
 		return (uint16(ipLayer.Protocol) == v), nil
 	case "chksum":
-		return (uint16(ipLayer.Checksum) == v), nil
+		return (ipLayer.Checksum == v), nil
 	default:
 		return false, errors.New("IPTrigger.Matches(%s) is unimplemented", t.Field())
 	}
@@ -153,9 +160,9 @@ func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
 	}
 
 	if value == "" {
-		return nil, errors.New("cannot create IP trigger with empty value")
-		// XXX and just like with TCP triggers, this is a false statement
+		// XXX just like with TCP triggers, this is a false statement
 		// that needs to be fixed.
+		return nil, errors.New("cannot create IP trigger with empty value")
 	}
 
 	f, err := ParseIPField(field)

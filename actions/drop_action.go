@@ -17,4 +17,4 @@ func (a *DropAction) String() string {
 
 // DefaultDropAction is the default drop action.
 // (DropAction is so simple that there is no need to allocate more than one.)
-var DefaultDropAction *DropAction = &DropAction{}
+var DefaultDropAction = &DropAction{}

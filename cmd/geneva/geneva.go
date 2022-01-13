@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/getlantern/geneva"
-
 	"github.com/urfave/cli/v2"
 )
 
@@ -69,7 +68,7 @@ func main() {
 						Required: true,
 					},
 				},
-				Action: run_pcap,
+				Action: runPcap,
 			},
 			{
 				Name:  "validate",

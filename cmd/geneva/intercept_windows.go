@@ -32,6 +32,7 @@ func init() {
 	if err := _qpc.Find(); err != nil {
 		panic(fmt.Errorf("error finding QueryPerformanceCounter: %v", err))
 	}
+
 	qpc = _qpc.Addr()
 
 	iphlpapi = windows.NewLazySystemDLL("Iphlpapi.dll")
@@ -42,7 +43,9 @@ func init() {
 
 func now() int64 {
 	var now uint64
+
 	syscall.Syscall(qpc, 1, uintptr(unsafe.Pointer(&now)), 0, 0)
+
 	return int64(now)
 }
 
@@ -75,7 +78,7 @@ func getAdapter(iface string) (uint32, error) {
 	return 0, fmt.Errorf("no adapter found")
 }
 
-func do_intercept(strat *strategy.Strategy, iface string) error {
+func doIntercept(strat *strategy.Strategy, iface string) error {
 	idx, err := getAdapter(iface)
 	if err != nil {
 		return cli.Exit(err, 1)
@@ -90,10 +93,12 @@ func do_intercept(strat *strategy.Strategy, iface string) error {
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("error initializing WinDivert: %v\n", err), 1)
 	}
+
 	fmt.Printf("intercepting traffic on %s (idx %d)\n", iface, idx)
 
 	defer func() {
 		fmt.Fprintln(os.Stderr, "closing handle")
+
 		if err := winDivert.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "error closing WinDivert handle: %v\n", err)
 		}
@@ -115,6 +120,7 @@ func do_intercept(strat *strategy.Strategy, iface string) error {
 		}
 
 		var firstLayer gopacket.LayerType
+
 		switch pkt.IpVersion() {
 		case 4:
 			firstLayer = layers.LayerTypeIPv4
@@ -123,14 +129,17 @@ func do_intercept(strat *strategy.Strategy, iface string) error {
 		default:
 			fmt.Println("bypassing Geneva for non-IP packet")
 			winDivert.Send(pkt)
+
 			continue
 		}
 
 		gopkt := gopacket.NewPacket(pkt.Raw, firstLayer, gopacket.Default)
+
 		results, err := strat.Apply(gopkt, dir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error applying strategy: %v\n", err)
 			winDivert.Send(pkt)
+
 			continue
 		}
 
@@ -152,9 +161,11 @@ func do_intercept(strat *strategy.Strategy, iface string) error {
 				},
 				PacketLen: uint(len(p.Data())),
 			}
+
 			fmt.Printf("\tinjecting packet %d/%d (len %d)\n", i+1, len(results), len(p.Data()))
 
 			newPkt.VerifyParsed()
+
 			if sent, err := winDivert.Send(&newPkt); err != nil {
 				fmt.Fprintf(os.Stderr, "error sending packet: %v\n", err)
 			} else if sent != newPkt.PacketLen {

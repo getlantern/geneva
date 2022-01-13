@@ -1,3 +1,4 @@
+//nolint:godox
 package scanner
 
 import (
@@ -20,15 +21,6 @@ func NewScanner(source string) *Scanner {
 	return &Scanner{[]rune(source), 0}
 }
 
-func (l *Scanner) tokenNotFound() error {
-	r, err := l.Peek()
-	if err != nil {
-		return errors.Wrap(err)
-	}
-
-	return errors.New(`token %q not recognized at char %d`, r, l.currentPosition)
-}
-
 func (l *Scanner) Pos() int {
 	return l.currentPosition
 }
@@ -38,6 +30,7 @@ func (l *Scanner) Peek() (rune, error) {
 	if l.currentPosition >= len(l.rest) {
 		return 0, io.EOF
 	}
+
 	return l.rest[l.currentPosition], nil
 }
 
@@ -49,6 +42,7 @@ func (l *Scanner) Pop() (rune, error) {
 	}
 
 	l.currentPosition++
+
 	return b, nil
 }
 
@@ -65,7 +59,9 @@ func (l *Scanner) Expect(token string) (string, error) {
 			return "", errors.New("expected token %q not found at position %d", token, l.currentPosition)
 		}
 	}
+
 	l.currentPosition += len(token)
+
 	return token, nil
 }
 
@@ -80,14 +76,17 @@ func (l *Scanner) FindToken(token string, caseSensitive bool) bool {
 	for i, c := range token {
 		t := c
 		cur := l.rest[l.currentPosition+i]
+
 		if !caseSensitive {
 			t = unicode.ToLower(c)
 			cur = unicode.ToLower(cur)
 		}
+
 		if cur != t {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -113,6 +112,7 @@ func (l *Scanner) Advance(count int) error {
 	}
 
 	l.currentPosition += count
+
 	return nil
 }
 
@@ -123,9 +123,11 @@ func (l *Scanner) Chomp() {
 		if err != nil {
 			return
 		}
+
 		if !unicode.IsSpace(c) {
 			return
 		}
+
 		_ = l.Advance(1)
 	}
 }

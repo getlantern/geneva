@@ -31,13 +31,16 @@ func intercept(c *cli.Context) error {
 	}
 
 	fmt.Println("outbound strategy:")
+
 	for _, s := range strat.Outbound {
 		fmt.Printf("\t%s\n", s)
 	}
+
 	fmt.Println("inbound strategy:")
+
 	for _, s := range strat.Inbound {
 		fmt.Printf("\t%s\n", s)
 	}
 
-	return do_intercept(strat, iface)
+	return doIntercept(strat, iface)
 }

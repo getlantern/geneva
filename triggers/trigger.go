@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"github.com/getlantern/errors"
-
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
-	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
+
+	// gopacket best practice says import this, too.
+	_ "github.com/google/gopacket/layers"
 )
 
 // Trigger is implemented by any value that describes a Geneva trigger.
@@ -37,6 +38,7 @@ func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
 	if err != nil {
 		return nil, errors.Wrap(internal.EOFUnexpected(err))
 	}
+
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
@@ -59,6 +61,7 @@ func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
 	}
 
 	var trigger Trigger
+
 	switch strings.ToLower(fields[0]) {
 	case "ip":
 		trigger, err = NewIPTrigger(fields[1], fields[2], gas)

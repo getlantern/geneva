@@ -1,6 +1,7 @@
 package triggers
 
 import (
+	gerrors "errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
+
+var ErrUnsupportedOption = gerrors.New("unsupported option")
 
 // TCPField is the type of a supported TCP field.
 type TCPField int
@@ -48,6 +51,7 @@ func ParseTCPField(field string) (TCPField, error) {
 			return TCPField(i), nil
 		}
 	}
+
 	return TCPField(0), errors.New("unknown TCP field %s", field)
 }
 
@@ -64,6 +68,7 @@ func (t *TCPTrigger) String() string {
 	if t.gas > 0 {
 		gas = fmt.Sprintf(":%d", t.gas)
 	}
+
 	return fmt.Sprintf("[%s:%s:%s%s]", t.Protocol(), t.Field(), t.value, gas)
 }
 
@@ -122,6 +127,7 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 				return false, nil
 			}
 		}
+
 		return true, nil
 	case "load":
 		if len(tcpLayer.Payload) < len(t.value) {
@@ -133,13 +139,15 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 				return false, nil
 			}
 		}
+
 		return true, nil
 	}
 
 	if strings.HasPrefix(t.Field(), "options-") {
 		var optKind layers.TCPOptionKind
 
-		switch strings.Split(t.Field(), "-")[1] {
+		opt := strings.Split(t.Field(), "-")[1]
+		switch opt {
 		case "eol":
 			optKind = layers.TCPOptionKindEndList
 		case "nop":
@@ -162,18 +170,26 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 			optKind = 19 // gopacket doesn't know about this one
 		case "uto":
 			optKind = 28 // "User Time-Out"; also unknown to gopacket
+		default:
+			return false, ErrUnsupportedOption
 		}
 
 		for _, opt := range tcpLayer.Options {
 			if opt.OptionType == optKind {
+				if len(opt.OptionData) < len(t.value) {
+					return false, nil
+				}
+
 				for i, b := range opt.OptionData {
 					if b != []byte(t.value)[i] {
 						return false, nil
 					}
 				}
+
 				return true, nil
 			}
 		}
+
 		return false, nil
 	}
 

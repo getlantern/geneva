@@ -1,8 +1,10 @@
 //go:build !windows
+
 package main
 
 import (
 	"bytes"
+	gerrors "errors"
 	"fmt"
 
 	"github.com/getlantern/geneva"
@@ -13,7 +15,9 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func dot(c *cli.Context) error {
+var ErrUnhandledAction = gerrors.New("unhandled action")
+
+func dot(c *cli.Context) error { //nolint:cyclop
 	input := c.Args().First()
 
 	if input == "" {
@@ -41,30 +45,33 @@ func dot(c *cli.Context) error {
 		if err := graph.Close(); err != nil {
 			fmt.Fprintf(cli.ErrWriter, "error closing graph: %v\n", err)
 		}
+
 		g.Close()
 	}()
 
 	err = parse(graph, strategy)
 	if err != nil {
-		cli.Exit(fmt.Sprintf("failed to graph strategy: %v\n", err), 1)
+		return cli.Exit(fmt.Sprintf("failed to graph strategy: %v\n", err), 1)
 	}
 
 	if c.Bool("verbose") {
 		var buf2 bytes.Buffer
 		if err := g.Render(graph, "dot", &buf2); err != nil {
-			cli.Exit(err, 1)
+			return cli.Exit(err, 1)
 		}
+
 		fmt.Println(buf2.String())
 	}
 
 	var buf bytes.Buffer
 	if err = g.Render(graph, graphviz.SVG, &buf); err != nil {
-		cli.Exit(err, 1)
+		return cli.Exit(err, 1)
 	}
 
 	fmt.Printf("writing SVG to %s", output)
+
 	if err := g.RenderFilename(graph, graphviz.SVG, output); err != nil {
-		cli.Exit(err, 1)
+		return cli.Exit(err, 1)
 	}
 
 	return nil
@@ -73,7 +80,7 @@ func dot(c *cli.Context) error {
 func parse(graph *cgraph.Graph, st *strategy.Strategy) error {
 	inbound, err := graph.CreateNode("inbound")
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating node: %w", err)
 	}
 
 	for _, at := range st.Inbound {
@@ -81,9 +88,10 @@ func parse(graph *cgraph.Graph, st *strategy.Strategy) error {
 		if err != nil {
 			return err
 		}
+
 		_, err = graph.CreateEdge(name("e"), inbound, node)
 		if err != nil {
-			return err
+			return fmt.Errorf("error creating edge to action: %w", err)
 		}
 	}
 
@@ -93,8 +101,9 @@ func parse(graph *cgraph.Graph, st *strategy.Strategy) error {
 func parseActionTree(graph *cgraph.Graph, at *actions.ActionTree) (*cgraph.Node, error) {
 	trigger, err := graph.CreateNode(name("trigger"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating node: %w", err)
 	}
+
 	trigger.SetShape("Mrecord")
 	trigger.SetLabel(fmt.Sprintf("trigger|{%s}", at.Trigger.String()))
 
@@ -104,7 +113,7 @@ func parseActionTree(graph *cgraph.Graph, at *actions.ActionTree) (*cgraph.Node,
 	}
 
 	if _, err := graph.CreateEdge("e", trigger, node); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating edge to first action: %w", err)
 	}
 
 	return trigger, nil
@@ -115,37 +124,43 @@ func parseAction(graph *cgraph.Graph, action actions.Action) (*cgraph.Node, erro
 	case *actions.SendAction:
 		node, err := graph.CreateNode(name("send"))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error creating node: %w", err)
 		}
+
 		node.SetLabel("send")
+
 		return node, nil
 	case *actions.DropAction:
 		node, err := graph.CreateNode(name("drop"))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error creating node: %w", err)
 		}
+
 		node.SetLabel("drop")
+
 		return node, nil
 	case *actions.DuplicateAction:
 		return parseDuplicateAction(graph, t)
 	case *actions.FragmentAction:
 		return parseFragmentAction(graph, t)
 	default:
-		return nil, fmt.Errorf("unhandled action \"%T\"", action)
+		return nil, ErrUnhandledAction
 	}
 }
 
 func parseDuplicateAction(graph *cgraph.Graph, action *actions.DuplicateAction) (*cgraph.Node, error) {
 	node, err := graph.CreateNode(name("duplicate"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating node: %w", err)
 	}
+
 	node.SetLabel("duplicate")
 
 	lnode, err := parseAction(graph, action.Left)
 	if err != nil {
 		return nil, err
 	}
+
 	rnode, err := parseAction(graph, action.Right)
 	if err != nil {
 		return nil, err
@@ -153,12 +168,12 @@ func parseDuplicateAction(graph *cgraph.Graph, action *actions.DuplicateAction) 
 
 	_, err = graph.CreateEdge(name("e"), node, lnode)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating edge to first action: %w", err)
 	}
 
 	_, err = graph.CreateEdge(name("e"), node, rnode)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating edge to first action: %w", err)
 	}
 
 	return node, nil
@@ -167,8 +182,9 @@ func parseDuplicateAction(graph *cgraph.Graph, action *actions.DuplicateAction) 
 func parseFragmentAction(graph *cgraph.Graph, action *actions.FragmentAction) (*cgraph.Node, error) {
 	node, err := graph.CreateNode(name("fragment"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating node: %w", err)
 	}
+
 	node.SetShape("record")
 	node.SetLabel(
 		fmt.Sprintf("fragment|{proto:%s|offset:%d|inOrder:%v}",
@@ -186,20 +202,21 @@ func parseFragmentAction(graph *cgraph.Graph, action *actions.FragmentAction) (*
 
 	_, err = graph.CreateEdge(name("e"), node, lnode)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating edge to first action: %w", err)
 	}
 
 	_, err = graph.CreateEdge(name("e"), node, rnode)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating edge to second action: %w", err)
 	}
 
 	return node, nil
 }
 
-var counter int = 0
+var counter int
 
 func name(base string) string {
 	counter++
+
 	return fmt.Sprintf("%s_%d", base, counter)
 }

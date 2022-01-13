@@ -35,8 +35,11 @@ type FragmentAction struct {
 
 // Apply applies this action to the given packet.
 func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
-	var err error
-	var packets, lpackets, rpackets []gopacket.Packet
+	var (
+		err                error
+		packets            []gopacket.Packet
+		lpackets, rpackets []gopacket.Packet
+	)
 
 	switch a.Proto {
 	case "IP":
@@ -45,6 +48,7 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	case "TCP":
 		packets, err = FragmentTCPSegment(packet, a.FragSize)
 	default:
+		// nolint: godox
 		// TODO: should we log this?
 		packets, err = duplicate(packet)
 	}
@@ -248,8 +252,10 @@ func ComputeIPv4Checksum(header []byte) uint16 {
 	for i := 0; i < len(header); i += 2 {
 		c.Add(binary.BigEndian.Uint16(header[i:]))
 	}
+
 	chksum := c.Finalize()
 	binary.BigEndian.PutUint16(header[10:], chksum)
+
 	return chksum
 }
 
@@ -270,6 +276,7 @@ func ComputeTCPChecksum(ipHeader, tcpHeader, payload []byte) uint16 {
 			// don't add existing checksum value
 			continue
 		}
+
 		c.Add(binary.BigEndian.Uint16(tcpHeader[i:]))
 	}
 
@@ -283,6 +290,7 @@ func ComputeTCPChecksum(ipHeader, tcpHeader, payload []byte) uint16 {
 			c.Add(binary.BigEndian.Uint16(payload[i:]))
 		}
 	}
+
 	return c.Finalize()
 }
 
@@ -290,6 +298,7 @@ func VerifyTCPChecksum(ipHeader, tcpHeader, payload []byte) bool {
 	c := internal.OnesComplementChecksum{}
 	c.Add(ComputeTCPChecksum(ipHeader, tcpHeader, payload))
 	c.Add(binary.BigEndian.Uint16(tcpHeader[16:]))
+
 	return c.Finalize() == 0
 }
 
@@ -299,6 +308,7 @@ func (a *FragmentAction) String() string {
 	if _, ok := a.FirstFragmentAction.(*SendAction); !ok {
 		actions[0] = a.FirstFragmentAction.String()
 	}
+
 	if _, ok := a.SecondFragmentAction.(*SendAction); !ok {
 		actions[1] = a.SecondFragmentAction.String()
 	}
@@ -323,6 +333,7 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	if err != nil {
 		return nil, errors.New("invalid fragment rule at %d: %v", s.Pos(), err)
 	}
+
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
@@ -331,6 +342,7 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	}
 
 	action := &FragmentAction{}
+
 	switch strings.ToLower(fields[0]) {
 	case "ip":
 		action.Proto = "IP"
@@ -346,6 +358,7 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	if err != nil {
 		return nil, errors.New("invalid fragment rule: %q is not a valid offset", fields[1])
 	}
+
 	action.FragSize = int(ofs)
 
 	if action.InOrder, err = strconv.ParseBool(fields[2]); err != nil {
@@ -357,13 +370,15 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 		if err != nil {
 			return nil, errors.New("invalid fragment rule: %q is not a valid overlap", fields[3])
 		}
+
 		action.overlap = int(overlap)
 	}
 
 	if _, err = s.Expect("("); err != nil {
 		action.FirstFragmentAction = &SendAction{}
 		action.SecondFragmentAction = &SendAction{}
-		return action, nil
+
+		return action, nil //nolint:nilerr
 	}
 
 	if action.FirstFragmentAction, err = ParseAction(s); err != nil {

@@ -34,13 +34,13 @@ func (f *Flow) DirectionEqual(flow *Flow) bool {
 func NewFlow(pkt gopacket.Packet) *Flow {
 	flow := &Flow{}
 
-	if ipv4 := pkt.NetworkLayer().(*layers.IPv4); ipv4 != nil {
+	if ipv4, ok := pkt.NetworkLayer().(*layers.IPv4); ok && ipv4 != nil {
 		flow.srcIP = ipv4.SrcIP
 		flow.dstIP = ipv4.DstIP
 
 		flow.checksum ^= binary.BigEndian.Uint32(ipv4.SrcIP)
 		flow.checksum ^= binary.BigEndian.Uint32(ipv4.DstIP)
-	} else if ipv6 := pkt.NetworkLayer().(*layers.IPv6); ipv6 != nil {
+	} else if ipv6, ok := pkt.NetworkLayer().(*layers.IPv6); ok && ipv6 != nil {
 		flow.srcIP = ipv6.SrcIP
 		flow.dstIP = ipv6.DstIP
 
@@ -55,13 +55,13 @@ func NewFlow(pkt gopacket.Packet) *Flow {
 		flow.checksum ^= binary.BigEndian.Uint32(ipv6.DstIP[12:])
 	}
 
-	if tcp := pkt.TransportLayer().(*layers.TCP); tcp != nil {
+	if tcp, ok := pkt.TransportLayer().(*layers.TCP); ok && tcp != nil {
 		flow.srcPort = uint16(tcp.SrcPort)
 		flow.dstPort = uint16(tcp.DstPort)
 
 		flow.checksum ^= uint32(tcp.SrcPort)
 		flow.checksum ^= uint32(tcp.DstPort)
-	} else if udp := pkt.TransportLayer().(*layers.UDP); udp != nil {
+	} else if udp, ok := pkt.TransportLayer().(*layers.UDP); ok && udp != nil {
 		flow.srcPort = uint16(udp.SrcPort)
 		flow.dstPort = uint16(udp.DstPort)
 

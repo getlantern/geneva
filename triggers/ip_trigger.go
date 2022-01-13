@@ -77,8 +77,8 @@ func (t *IPTrigger) Gas() int {
 
 // Matches returns whether the trigger matches the packet.
 func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
-	ipLayer := pkt.NetworkLayer().(*layers.IPv4)
-	if ipLayer == nil {
+	ipLayer, ok := pkt.NetworkLayer().(*layers.IPv4)
+	if !ok || ipLayer == nil {
 		// XXX currently only supports IPv4
 		return false, nil
 	}

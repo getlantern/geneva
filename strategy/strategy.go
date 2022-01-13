@@ -185,5 +185,6 @@ func (s *Strategy) String() string {
 		outbound = append(outbound, st.String())
 	}
 	o := strings.Join(outbound, " ")
-	return strings.TrimSpace(fmt.Sprintf(`%s \/ %s`, i, o))
+
+	return strings.TrimSpace(fmt.Sprintf(`%s \/ %s`, o, i))
 }

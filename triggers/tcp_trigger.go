@@ -8,7 +8,6 @@ import (
 	"github.com/getlantern/errors"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	_ "github.com/google/gopacket/layers" // gopacket best practice is to import this as well
 )
 
 // TCPField is the type of a supported TCP field.
@@ -85,8 +84,8 @@ func (t *TCPTrigger) Gas() int {
 
 // Matches returns whether the trigger matches the packet.
 func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
-	tcpLayer := pkt.TransportLayer().(*layers.TCP)
-	if tcpLayer == nil {
+	tcpLayer, ok := pkt.TransportLayer().(*layers.TCP)
+	if !ok || tcpLayer == nil {
 		return false, nil
 	}
 
@@ -125,6 +124,10 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 		}
 		return true, nil
 	case "load":
+		if len(tcpLayer.Payload) < len(t.value) {
+			return false, nil
+		}
+
 		for i, r := range []byte(t.value) {
 			if r != tcpLayer.Payload[i] {
 				return false, nil

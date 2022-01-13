@@ -48,6 +48,14 @@ type Strategy struct {
 // Direction is the direction of a packet: either inbound (ingress) or outbound (egress).
 type Direction int
 
+func (d Direction) String() string {
+	if d == DirectionInbound {
+		return "inbound"
+	} else {
+		return "outbound"
+	}
+}
+
 const (
 	// DirectionInbound indicates a packet received from a remote host (i.e., inbound or ingress traffic).
 	DirectionInbound Direction = iota
@@ -109,7 +117,7 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 // ParseStrategy parses a string representation of a strategy into the actual Strategy object.
 // If the string is malformed, and error will be returned instead.
 func ParseStrategy(strategy string) (*Strategy, error) {
-	// inbound-tree \/ outbound-tree
+	// outbound-tree \/ inbound-tree
 	s := scanner.NewScanner(strings.TrimSpace(strategy))
 
 	st := &Strategy{
@@ -122,18 +130,18 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 			break
 		}
 
-		inbound, err := actions.ParseActionTree(s)
+		outbound, err := actions.ParseActionTree(s)
 		if err != nil {
 			if err == io.EOF {
 				return st, nil
 			}
 			return nil, errors.Wrap(err)
 		}
-		st.Inbound = append(st.Inbound, inbound)
+		st.Outbound = append(st.Outbound, outbound)
 		s.Chomp()
 
 		if _, err = s.Peek(); err == io.EOF {
-			// there is no outbound strategy, and this strategy didn't end with the \/ delimiter.
+			// there is no inbound strategy, and this strategy didn't end with the \/ delimiter.
 			return st, nil
 		}
 	}
@@ -149,17 +157,17 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 	s.Chomp()
 
 	for {
-		// before we try to parse the outbound strategy, let's first make sure there's one there at all.
+		// before we try to parse the inbound strategy, let's first make sure there's one there at all.
 		if _, err := s.Peek(); err != nil && err == io.EOF {
-			// looks like we don't have an outbound strategy, so we're done!
+			// looks like we don't have an inbound strategy, so we're done!
 			break
 		}
 
-		outbound, err := actions.ParseActionTree(s)
+		inbound, err := actions.ParseActionTree(s)
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}
-		st.Outbound = append(st.Outbound, outbound)
+		st.Inbound = append(st.Inbound, inbound)
 	}
 
 	return st, nil

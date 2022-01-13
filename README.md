@@ -20,13 +20,13 @@ can be reinjected into the host OS' network stack.
 
 Let's work from the top down. A strategy, conceptually, looks like this:
 
-    inbound-forest \/ outbound-forest
+    outbound-forest \/ inbound-forest
 
-_inbound-forest_ and _outbound-forest_ are ordered lists of _(trigger, action tree)_ pairs. The Geneva paper calls these
-ordered lists _forests_. The inbound and outbound forests are separated by the `\/` characters (that is a backslash
+_outbound-forest_ and _inbound-forest_ are ordered lists of _(trigger, action tree)_ pairs. The Geneva paper calls these
+ordered lists _forests_. The outbound and inbound forests are separated by the `\/` characters (that is a backslash
 followed by a forward-slash); if the strategy omits one or the other, then that side of the `\/` is left empty. For
-example, a strategy that only includes an inbound forest would take the form `inbound \/`, whereas an outbound-only
-strategy would be `\/ outbound`.
+example, a strategy that only includes an outbound forest would take the form `outbound \/`, whereas an inbound-only
+strategy would be `\/ inbound`.
 
 The original Geneva paper does not have a name for these (trigger, action tree) pairs. In practice, however, the Python
 code actually defines an action tree as a (trigger, action) pair, where the "action" is the root of a tree of
@@ -41,11 +41,11 @@ A real example, taken from the [original paper][geneva-paper] (pg 2202), would l
            send)-| \/
     [TCP:flags:R]-drop-|
 
-In this example, the inbound forest would trigger on TCP packets that have just the `SYN` flag set, and would perform a
-few different actions on those packets. The outbound forest would only apply to TCP packets with the `RST` flag set, and
+In this example, the outbound forest would trigger on TCP packets that have just the `SYN` flag set, and would perform a
+few different actions on those packets. The inbound forest would only apply to TCP packets with the `RST` flag set, and
 would simply drop them. Each of the forests in the example are made up of a single (trigger, action tree) pair.
 
-The inbound forest for the above action in graph form looks like this:
+The outbound forest for the above action in graph form looks like this:
 
 ![Inbound Forest Graph](img/rule_example.svg)
 

@@ -90,11 +90,15 @@ func TestFindToken(t *testing.T) {
 	}
 
 	if !l.FindToken("A", false) {
-		t.Fatal("FindToken(): case-INsensitive search for 'a' failed when it should not have")
+		t.Fatal(
+			"FindToken(): case-INsensitive search for 'a' failed when it should not have",
+		)
 	}
 
 	if l.FindToken("A", true) {
-		t.Fatal("FindToken(): case-sensitive search for 'A' succeeded when it should not have")
+		t.Fatal(
+			"FindToken(): case-sensitive search for 'A' succeeded when it should not have",
+		)
 	}
 }
 

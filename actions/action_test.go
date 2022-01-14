@@ -13,21 +13,23 @@ import (
 
 var (
 	ping = []byte{
-		0x00, 0x0d, 0xb9, 0x4d, 0x18, 0xfd, 0x78, 0x31, 0xc1, 0xbb, 0xd2, 0x1e, 0x08, 0x00, 0x45, 0x00, 0x00,
-		0x54, 0x97, 0x67, 0x00, 0x00, 0x40, 0x01, 0x5d, 0xc0, 0xc0, 0xa8, 0x02, 0x30, 0xc0, 0xa8, 0x02, 0x01,
-		0x08, 0x00, 0x13, 0x66, 0xed, 0xba, 0x00, 0x00, 0x61, 0xba, 0x3a, 0x41, 0x00, 0x0d, 0x6f, 0xd3, 0x08,
-		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
-		0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a,
-		0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+		0x00, 0x0d, 0xb9, 0x4d, 0x18, 0xfd, 0x78, 0x31, 0xc1, 0xbb, 0xd2, 0x1e, 0x08, 0x00,
+		0x45, 0x00, 0x00, 0x54, 0x97, 0x67, 0x00, 0x00, 0x40, 0x01, 0x5d, 0xc0, 0xc0, 0xa8,
+		0x02, 0x30, 0xc0, 0xa8, 0x02, 0x01, 0x08, 0x00, 0x13, 0x66, 0xed, 0xba, 0x00, 0x00,
+		0x61, 0xba, 0x3a, 0x41, 0x00, 0x0d, 0x6f, 0xd3, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+		0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
+		0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29,
+		0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
 	}
 
 	sshWithLinkLayer = []byte{
 		0xf4, 0xd4, 0x88, 0x64, 0xe3, 0x2d, 0x00, 0xd, 0xb9, 0x4d, 0x18, 0xfd, 0x08, 0x00,
-		0x45, 0x00, 0x00, 0x49, 0x00, 0x00, 0x40, 0x00, 0x40, 0x06, 0xb5, 0x2d, 0xc0, 0xa8, 0x02, 0x30, 0xc0,
-		0xa8, 0x02, 0x01, 0xee, 0x3a, 0x00, 0x16, 0x6b, 0x8b, 0xad, 0x49, 0x9f, 0x7b, 0x50, 0xae, 0x80, 0x18,
-		0x08, 0x0a, 0x61, 0x41, 0x00, 0x00, 0x01, 0x01, 0x08, 0x0a, 0x8b, 0xc1, 0xd9, 0x53, 0x28, 0xbf, 0x41,
-		0x06, 0x53, 0x53, 0x48, 0x2d, 0x32, 0x2e, 0x30, 0x2d, 0x4f, 0x70, 0x65, 0x6e, 0x53, 0x53, 0x48, 0x5f,
-		0x38, 0x2e, 0x31, 0x0d, 0x0a,
+		0x45, 0x00, 0x00, 0x49, 0x00, 0x00, 0x40, 0x00, 0x40, 0x06, 0xb5, 0x2d, 0xc0, 0xa8,
+		0x02, 0x30, 0xc0, 0xa8, 0x02, 0x01, 0xee, 0x3a, 0x00, 0x16, 0x6b, 0x8b, 0xad, 0x49,
+		0x9f, 0x7b, 0x50, 0xae, 0x80, 0x18, 0x08, 0x0a, 0x61, 0x41, 0x00, 0x00, 0x01, 0x01,
+		0x08, 0x0a, 0x8b, 0xc1, 0xd9, 0x53, 0x28, 0xbf, 0x41, 0x06, 0x53, 0x53, 0x48, 0x2d,
+		0x32, 0x2e, 0x30, 0x2d, 0x4f, 0x70, 0x65, 0x6e, 0x53, 0x53, 0x48, 0x5f, 0x38, 0x2e,
+		0x31, 0x0d, 0x0a,
 	}
 	ssh = sshWithLinkLayer[14:]
 )
@@ -36,8 +38,8 @@ func TestIPv4HeaderChecksum(t *testing.T) {
 	t.Parallel()
 	// This comes straight from https://en.wikipedia.org/wiki/IPv4_header_checksum
 	header := []byte{
-		0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0xb8, 0x61, 0xc0, 0xa8, 0x00, 0x01, 0xc0,
-		0xa8, 0x00, 0xc7,
+		0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0xb8, 0x61, 0xc0, 0xa8,
+		0x00, 0x01, 0xc0, 0xa8, 0x00, 0xc7,
 	}
 	expected := uint16(0xb861)
 
@@ -194,13 +196,24 @@ func TestDuplicateAction(t *testing.T) {
 		}
 
 		if len(p.Data()) != len(ssh) {
-			t.Fatalf("packet %d length: expected %d, got %d", i, len(ssh), len(p.Data()))
+			t.Fatalf(
+				"packet %d length: expected %d, got %d",
+				i,
+				len(ssh),
+				len(p.Data()),
+			)
 		}
 
 		pData := p.Data()
 		for j, b := range ssh {
 			if b != pData[j] {
-				t.Fatalf("packet %d differs at byte %d (expected %#x, got %#x)", i, j, b, pData[j])
+				t.Fatalf(
+					"packet %d differs at byte %d (expected %#x, got %#x)",
+					i,
+					j,
+					b,
+					pData[j],
+				)
 			}
 		}
 	}
@@ -213,11 +226,16 @@ type ipFragmentResult struct {
 	ipPayloadLen  uint16
 }
 
-func VerifyIPFragment(t *testing.T, originalChecksum uint16, fragIndex int, result ipFragmentResult) { //nolint:thelper
+func VerifyIPFragment(
+	t *testing.T,
+	originalChecksum uint16,
+	fragIndex int,
+	result ipFragmentResult,
+) { //nolint:thelper
 	packetDumpLogged := false
 
-	// this is just so that we only print out the packet dump once--instead of every time an error
-	// occurs--and only if we actually encounter an error.
+	// this is just so that we only print out the packet dump once--instead of every time an
+	// error occurs--and only if we actually encounter an error.
 	dump := func() {
 		if !packetDumpLogged {
 			t.Log(result.frag.Dump())
@@ -298,59 +316,69 @@ func TestFragmentActionIP(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 
-		t.Run(fmt.Sprintf("layer %s frag %d", tc.firstLayerType, tc.fragSize), func(t *testing.T) {
-			t.Parallel()
-			pkt := gopacket.NewPacket(tc.pkt, tc.firstLayerType, gopacket.Default)
+		t.Run(
+			fmt.Sprintf("layer %s frag %d", tc.firstLayerType, tc.fragSize),
+			func(t *testing.T) {
+				t.Parallel()
+				pkt := gopacket.NewPacket(
+					tc.pkt,
+					tc.firstLayerType,
+					gopacket.Default,
+				)
 
-			pktIPv4Layer, ok := pkt.NetworkLayer().(*layers.IPv4)
-			if !ok {
-				t.Fatal("type assertion failed")
-			}
+				pktIPv4Layer, ok := pkt.NetworkLayer().(*layers.IPv4)
+				if !ok {
+					t.Fatal("type assertion failed")
+				}
 
-			str := fmt.Sprintf("fragment{IP:%d:true}", tc.fragSize)
+				str := fmt.Sprintf("fragment{IP:%d:true}", tc.fragSize)
 
-			l := scanner.NewScanner(str)
-			a, err := actions.ParseAction(l)
-			if err != nil {
-				t.Fatalf("ParseAction() got an error: %v", err)
-			}
+				l := scanner.NewScanner(str)
+				a, err := actions.ParseAction(l)
+				if err != nil {
+					t.Fatalf("ParseAction() got an error: %v", err)
+				}
 
-			result, err := a.Apply(pkt)
-			if err != nil {
-				t.Fatalf("Apply() failed: %v", err)
-			}
+				result, err := a.Apply(pkt)
+				if err != nil {
+					t.Fatalf("Apply() failed: %v", err)
+				}
 
-			if len(result) != 2 {
-				t.Fatalf("expected 2 packets, but got %d", len(result))
-			}
+				if len(result) != 2 {
+					t.Fatalf("expected 2 packets, but got %d", len(result))
+				}
 
-			var actualFragSize uint16
-			if tc.fragSize == -1 {
-				// IP frags are in words, and -1 means split the payload in two
-				actualFragSize = uint16(len(pktIPv4Layer.Payload)) / 8 / 2
-			} else {
-				actualFragSize = uint16(tc.fragSize)
-			}
+				var actualFragSize uint16
+				if tc.fragSize == -1 {
+					// IP frags are in words, and -1 means split the payload in
+					// two
+					actualFragSize = uint16(len(pktIPv4Layer.Payload)) / 8 / 2
+				} else {
+					actualFragSize = uint16(tc.fragSize)
+				}
 
-			expected := []ipFragmentResult{
-				{
-					result[0],
-					1,
-					0,
-					actualFragSize * 8,
-				},
-				{
-					result[1],
-					0,
-					actualFragSize,
-					uint16(len(pktIPv4Layer.Payload)) - (actualFragSize * 8),
-				},
-			}
+				expected := []ipFragmentResult{
+					{
+						result[0],
+						1,
+						0,
+						actualFragSize * 8,
+					},
+					{
+						result[1],
+						0,
+						actualFragSize,
+						uint16(
+							len(pktIPv4Layer.Payload),
+						) - (actualFragSize * 8),
+					},
+				}
 
-			for fragIdx, e := range expected {
-				VerifyIPFragment(t, pktIPv4Layer.Checksum, fragIdx, e)
-			}
-		})
+				for fragIdx, e := range expected {
+					VerifyIPFragment(t, pktIPv4Layer.Checksum, fragIdx, e)
+				}
+			},
+		)
 	}
 }
 
@@ -363,8 +391,8 @@ type tcpFragmentResult struct {
 func VerifyTCPFragment(t *testing.T, fragIndex int, result tcpFragmentResult) { //nolint:thelper
 	packetDumpLogged := false
 
-	// this is just so that we only print out the packet dump once--instead of every time an error
-	// occurs--and only if we actually encounter an error.
+	// this is just so that we only print out the packet dump once--instead of every time an
+	// error occurs--and only if we actually encounter an error.
 	dump := func() {
 		if !packetDumpLogged {
 			t.Log(result.frag.Dump())
@@ -430,62 +458,71 @@ func TestFragmentActionTCP(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 
-		t.Run(fmt.Sprintf("layer %s frag %d", tc.firstLayerType, tc.fragSize), func(t *testing.T) {
-			t.Parallel()
-			pkt := gopacket.NewPacket(tc.pkt, tc.firstLayerType, gopacket.Default)
-			pktIPv4Layer, ok := pkt.NetworkLayer().(*layers.IPv4)
-			if !ok {
-				t.Fatal("type assertion failed")
-			}
+		t.Run(
+			fmt.Sprintf("layer %s frag %d", tc.firstLayerType, tc.fragSize),
+			func(t *testing.T) {
+				t.Parallel()
+				pkt := gopacket.NewPacket(
+					tc.pkt,
+					tc.firstLayerType,
+					gopacket.Default,
+				)
+				pktIPv4Layer, ok := pkt.NetworkLayer().(*layers.IPv4)
+				if !ok {
+					t.Fatal("type assertion failed")
+				}
 
-			pktTCPLayer, ok := pkt.TransportLayer().(*layers.TCP)
-			if !ok {
-				t.Fatal("type assertion failed")
-			}
+				pktTCPLayer, ok := pkt.TransportLayer().(*layers.TCP)
+				if !ok {
+					t.Fatal("type assertion failed")
+				}
 
-			str := fmt.Sprintf("fragment{TCP:%d:true}", tc.fragSize)
+				str := fmt.Sprintf("fragment{TCP:%d:true}", tc.fragSize)
 
-			l := scanner.NewScanner(str)
-			a, err := actions.ParseAction(l)
-			if err != nil {
-				t.Fatalf("ParseAction() got an error: %v", err)
-			}
+				l := scanner.NewScanner(str)
+				a, err := actions.ParseAction(l)
+				if err != nil {
+					t.Fatalf("ParseAction() got an error: %v", err)
+				}
 
-			result, err := a.Apply(pkt)
-			if err != nil {
-				t.Fatalf("Apply() failed: %v", err)
-			}
+				result, err := a.Apply(pkt)
+				if err != nil {
+					t.Fatalf("Apply() failed: %v", err)
+				}
 
-			if len(result) != 2 {
-				t.Fatalf("expected 2 packets, but got %d", len(result))
-			}
+				if len(result) != 2 {
+					t.Fatalf("expected 2 packets, but got %d", len(result))
+				}
 
-			var actualFragSize uint16
-			if tc.fragSize == -1 {
-				actualFragSize = uint16(len(pktTCPLayer.Payload)) / 2
-			} else {
-				actualFragSize = uint16(tc.fragSize)
-			}
+				var actualFragSize uint16
+				if tc.fragSize == -1 {
+					actualFragSize = uint16(len(pktTCPLayer.Payload)) / 2
+				} else {
+					actualFragSize = uint16(tc.fragSize)
+				}
 
-			expected := []tcpFragmentResult{
-				{
-					result[0],
-					pktIPv4Layer.Length - uint16(len(pktTCPLayer.Payload)) + actualFragSize,
-					actualFragSize,
-				},
-				{
-					result[1],
-					pktIPv4Layer.Length - actualFragSize,
-					uint16(len(pktTCPLayer.Payload)) - actualFragSize,
-				},
-			}
+				expected := []tcpFragmentResult{
+					{
+						result[0],
+						pktIPv4Layer.Length - uint16(
+							len(pktTCPLayer.Payload),
+						) + actualFragSize,
+						actualFragSize,
+					},
+					{
+						result[1],
+						pktIPv4Layer.Length - actualFragSize,
+						uint16(len(pktTCPLayer.Payload)) - actualFragSize,
+					},
+				}
 
-			for i, e := range expected {
-				t.Log("===== Original Packet =====")
-				t.Log(pkt.Dump())
-				VerifyTCPFragment(t, i, e)
-			}
-		})
+				for i, e := range expected {
+					t.Log("===== Original Packet =====")
+					t.Log(pkt.Dump())
+					VerifyTCPFragment(t, i, e)
+				}
+			},
+		)
 	}
 }
 
@@ -551,7 +588,10 @@ func TestActionCanonicalization(t *testing.T) {
 		{"[TCP:flags:S]-duplicate-|", "[TCP:flags:S]-duplicate(send,send)-|"},
 		{"[TCP:flags:S]-duplicate(drop,)-|", "[TCP:flags:S]-duplicate(drop,send)-|"},
 		{"[TCP:flags:S]-duplicate(,drop)-|", "[TCP:flags:S]-duplicate(send,drop)-|"},
-		{"[TCP:flags:S]-duplicate(duplicate,)-|", "[TCP:flags:S]-duplicate(duplicate(send,send),send)-|"},
+		{
+			"[TCP:flags:S]-duplicate(duplicate,)-|",
+			"[TCP:flags:S]-duplicate(duplicate(send,send),send)-|",
+		},
 	}
 
 	for i, tc := range tests {

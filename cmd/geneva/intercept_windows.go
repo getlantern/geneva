@@ -57,7 +57,10 @@ func getAdapter(iface string) (uint32, error) {
 	// ERROR_BUFFER_OVERFLOW, which would require calling GetAdaptersAddresses function multiple
 	// times."
 	bufLenBytes := 15 * 1024
-	info := make([]windows.IpAdapterAddresses, bufLenBytes/int(unsafe.Sizeof(windows.IpAdapterAddresses{})))
+	info := make(
+		[]windows.IpAdapterAddresses,
+		bufLenBytes/int(unsafe.Sizeof(windows.IpAdapterAddresses{})),
+	)
 	ol := uint32(bufLenBytes)
 
 	err := windows.GetAdaptersAddresses(windows.AF_UNSPEC, 0, 0, &info[0], &ol)
@@ -89,7 +92,12 @@ func doIntercept(strat *strategy.Strategy, iface string) error {
 
 	filter := fmt.Sprintf("ifIdx == %d", idx)
 
-	winDivert, err := godivert.OpenHandle(filter, godivert.LayerNetwork, godivert.PriorityDefault, godivert.OpenFlagFragments)
+	winDivert, err := godivert.OpenHandle(
+		filter,
+		godivert.LayerNetwork,
+		godivert.PriorityDefault,
+		godivert.OpenFlagFragments,
+	)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("error initializing WinDivert: %v\n", err), 1)
 	}
@@ -162,7 +170,12 @@ func doIntercept(strat *strategy.Strategy, iface string) error {
 				PacketLen: uint(len(p.Data())),
 			}
 
-			fmt.Printf("\tinjecting packet %d/%d (len %d)\n", i+1, len(results), len(p.Data()))
+			fmt.Printf(
+				"\tinjecting packet %d/%d (len %d)\n",
+				i+1,
+				len(results),
+				len(p.Data()),
+			)
 
 			newPkt.VerifyParsed()
 

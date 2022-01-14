@@ -69,7 +69,8 @@ func TCPFields() map[TCPField]string {
 	}
 }
 
-// ParseTCPField parses a field name and returns an TCPField, or an error if the field is not supported.
+// ParseTCPField parses a field name and returns an TCPField, or an error if the field is not
+// supported.
 func ParseTCPField(field string) (TCPField, error) {
 	for k, v := range TCPFields() {
 		if field == v {

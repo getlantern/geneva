@@ -13,12 +13,14 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
-// FragmentAction is a Geneva action that splits a packet into two fragments and applies separate action trees to each.
+// FragmentAction is a Geneva action that splits a packet into two fragments and applies separate
+// action trees to each.
 //
-// As an example, if Proto is "IP" and FragSize is 8, this will fragment a 60-byte IP packet into two fragments: the
-// first will contain the first eight bytes of the original packet's payload, and the second will contain the remaining
-// 52 bytes.  Each fragment will retain the original header (modulo the fields that must be updated to mark it as a
-// fragmented packet). If the Proto's header includes a checksum, it will be recomputed.
+// As an example, if Proto is "IP" and FragSize is 8, this will fragment a 60-byte IP packet into
+// two fragments: the first will contain the first eight bytes of the original packet's payload, and
+// the second will contain the remaining 52 bytes.  Each fragment will retain the original header
+// (modulo the fields that must be updated to mark it as a fragmented packet). If the Proto's header
+// includes a checksum, it will be recomputed.
 type FragmentAction struct {
 	// Proto is the protocol layer where the packet will be fragmented.
 	proto gopacket.LayerType
@@ -86,13 +88,14 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 }
 
 func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, error) {
-	// XXX: the original Geneva code does not seem to handle TCP segmentation for IPv6 packets, so we don't either
-	// for now.
+	// XXX: the original Geneva code does not seem to handle TCP segmentation for IPv6 packets,
+	// so we don't either for now.
 	if packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {
 		return duplicate(packet)
 	}
 
-	if packet.TransportLayer() == nil || packet.TransportLayer().LayerType() != layers.LayerTypeTCP {
+	if packet.TransportLayer() == nil ||
+		packet.TransportLayer().LayerType() != layers.LayerTypeTCP {
 		return duplicate(packet)
 	}
 
@@ -107,17 +110,22 @@ func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet
 		fragSize = tcpPayloadLen / 2
 	}
 
-	// XXX: upstream Geneva supports "overlap bytes"; i.e., taking the first few bytes of the second fragment and
-	// tacking them onto the end of the first fragment. It's not mentioned in the original paper. We don't do this
-	// right now, but could later.
+	// XXX: upstream Geneva supports "overlap bytes"; i.e., taking the first few bytes of the
+	// second fragment and tacking them onto the end of the first fragment. It's not mentioned
+	// in the original paper. We don't do this right now, but could later.
 
 	headersLen := len(packet.Data()) - tcpPayloadLen
 
-	/*
-	 * Strangely, all the manual bit-banging below was easier than dealing with creating packets using gopacket.
-	 */
+	// Strangely, all the manual bit-banging below was easier than dealing with creating packets
+	// using gopacket.
 
-	ofs := len(packet.Data()) - len(packet.NetworkLayer().LayerContents()) - len(packet.NetworkLayer().LayerPayload())
+	ofs := len(
+		packet.Data(),
+	) - len(
+		packet.NetworkLayer().LayerContents(),
+	) - len(
+		packet.NetworkLayer().LayerPayload(),
+	)
 	if ofs < 0 {
 		// something bad has happened, so let's bail.
 		return nil, errors.New("error calculating offset to network layer")
@@ -135,7 +143,11 @@ func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet
 	ipHdrLen := uint16(ipv4Buf[0]&0x0f) * 4
 	ComputeIPv4Checksum(ipv4Buf[:ipHdrLen])
 
-	chksum := ComputeTCPChecksum(ipv4Buf[:ipHdrLen], ipv4Buf[ipHdrLen:headersLen-ofs], ipv4Buf[headersLen-ofs:])
+	chksum := ComputeTCPChecksum(
+		ipv4Buf[:ipHdrLen],
+		ipv4Buf[ipHdrLen:headersLen-ofs],
+		ipv4Buf[headersLen-ofs:],
+	)
 	binary.BigEndian.PutUint16(ipv4Buf[ipHdrLen+16:], chksum)
 
 	first := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
@@ -152,14 +164,19 @@ func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet
 	binary.BigEndian.PutUint16(ipv4Buf[2:], uint16(f2Len-ofs))
 	ComputeIPv4Checksum(ipv4Buf[:ipHdrLen])
 
-	// fix up the TCP sequence number. Excitingly, Go does integer wrapping, so we don't have to.
+	// Fix up the TCP sequence number.
+	// Excitingly, Go does integer wrapping, so we don't have to.
 	tcp := ipv4Buf[ipHdrLen:]
 	seqNum := binary.BigEndian.Uint32(tcp[4:])
 	seqNum += uint32(fragSize)
 	binary.BigEndian.PutUint32(tcp[4:], seqNum)
 
 	// fix up the TCP checksum
-	chksum = ComputeTCPChecksum(ipv4Buf[:ipHdrLen], ipv4Buf[ipHdrLen:headersLen-ofs], ipv4Buf[headersLen-ofs:])
+	chksum = ComputeTCPChecksum(
+		ipv4Buf[:ipHdrLen],
+		ipv4Buf[ipHdrLen:headersLen-ofs],
+		ipv4Buf[headersLen-ofs:],
+	)
 	binary.BigEndian.PutUint16(ipv4Buf[ipHdrLen+16:], chksum)
 
 	second := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
@@ -167,12 +184,14 @@ func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet
 	return []gopacket.Packet{first, second}, nil
 }
 
-// FragmentIPPacket will fragment an IPv4 or IPv6 packet into two packets at the given 8-byte chunk offset.
+// FragmentIPPacket will fragment an IPv4 or IPv6 packet into two packets at the given 8-byte chunk
+// offset.
 //
-// The first fragment will include up to (fragSize * 8) bytes of the IP packet's payload, and the second fragment will
-// include the rest.
+// The first fragment will include up to (fragSize * 8) bytes of the IP packet's payload, and the
+// second fragment will include the rest.
 func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, error) {
-	if packet.NetworkLayer() == nil || packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {
+	if packet.NetworkLayer() == nil ||
+		packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {
 		return duplicate(packet)
 	}
 
@@ -190,9 +209,16 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 		return []gopacket.Packet{packet}, nil
 	}
 
-	// from this point on we can assume that the IP payload is _at least_ (fragSize*8) bytes long
+	// from this point on we can assume that the IP payload is _at least_ (fragSize*8) bytes
+	// long
 
-	ofs := len(packet.Data()) - len(packet.NetworkLayer().LayerContents()) - len(packet.NetworkLayer().LayerPayload())
+	ofs := len(
+		packet.Data(),
+	) - len(
+		packet.NetworkLayer().LayerContents(),
+	) - len(
+		packet.NetworkLayer().LayerPayload(),
+	)
 	if ofs < 0 {
 		// something bad has happened, so let's bail.
 		return nil, errors.New("error calculating offset to network layer")
@@ -222,8 +248,9 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 
 	first := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
 
-	// now start on the second fragment.
-	// First copy the old IP header as-is, then copy just the second fragment's payload right after.
+	// Now start on the second fragment.
+	// First copy the old IP header as-is, then copy just the second fragment's payload right
+	// after.
 	buf = make([]byte, len(packet.Data())-int(offset))
 	copy(buf, packet.Data()[:uint16(ofs)+hdrLen])
 
@@ -255,7 +282,8 @@ func VerifyIPv4Checksum(header []byte) bool {
 	return c.Finalize() == 0
 }
 
-// ComputeIPv4Checksum computes a new checksum for the given IPv4 header and writes it into the header.
+// ComputeIPv4Checksum computes a new checksum for the given IPv4 header and writes it into the
+// header.
 func ComputeIPv4Checksum(header []byte) uint16 {
 	// zero out the old checksum
 	binary.BigEndian.PutUint16(header[10:], 0)
@@ -296,8 +324,8 @@ func ComputeTCPChecksum(ipHeader, tcpHeader, payload []byte) uint16 {
 	// TCP payload
 	for i := 0; i < len(payload); i += 2 {
 		if len(payload)-i == 1 {
-			// If there are an odd number of octets in the payload, the last octet must be padded on the
-			// right with zeros.
+			// If there are an odd number of octets in the payload, the last octet must
+			// be padded on the right with zeros.
 			c.Add(uint16(payload[i]) << 8)
 		} else {
 			c.Add(binary.BigEndian.Uint16(payload[i:]))
@@ -336,7 +364,8 @@ func (a *FragmentAction) String() string {
 }
 
 // ParseFragmentAction parses a string representation of a "fragment" action.
-// If the string is malformed, and error will be returned instead.
+//
+// If the string is malformed, an error will be returned instead.
 func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	if _, err := s.Expect("fragment{"); err != nil {
 		return nil, errors.New("invalid fragment rule at %d: %v", s.Pos(), err)
@@ -351,7 +380,11 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 
 	fields := strings.Split(str, ":")
 	if len(fields) < 3 {
-		return nil, errors.New("not enough fields for fragment rule at %d (got %d)", s.Pos(), len(fields))
+		return nil, errors.New(
+			"not enough fields for fragment rule at %d (got %d)",
+			s.Pos(),
+			len(fields),
+		)
 	}
 
 	action := &FragmentAction{}
@@ -364,7 +397,10 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	case "udp":
 		action.proto = layers.LayerTypeUDP
 	default:
-		return nil, errors.New("invalid fragment rule: %q is not a recognized protocol", fields[0])
+		return nil, errors.New(
+			"invalid fragment rule: %q is not a recognized protocol",
+			fields[0],
+		)
 	}
 
 	ofs, err := strconv.ParseInt(fields[1], 10, 16)
@@ -375,13 +411,19 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	action.FragSize = int(ofs)
 
 	if action.InOrder, err = strconv.ParseBool(fields[2]); err != nil {
-		return nil, errors.New("invalid fragment rule: %q is not a valid boolean", fields[2])
+		return nil, errors.New(
+			"invalid fragment rule: %q is not a valid boolean",
+			fields[2],
+		)
 	}
 
 	if len(fields) == 4 {
 		overlap, err := strconv.ParseInt(fields[3], 10, 16)
 		if err != nil {
-			return nil, errors.New("invalid fragment rule: %q is not a valid overlap", fields[3])
+			return nil, errors.New(
+				"invalid fragment rule: %q is not a valid overlap",
+				fields[3],
+			)
 		}
 
 		action.overlap = int(overlap)

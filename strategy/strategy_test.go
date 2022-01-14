@@ -22,7 +22,10 @@ func TestFullStrategy(t *testing.T) {
 	}
 
 	if len(st.Outbound) != 1 {
-		t.Errorf("strategy should have 1 outbound action tree, but has %d", len(st.Outbound))
+		t.Errorf(
+			"strategy should have 1 outbound action tree, but has %d",
+			len(st.Outbound),
+		)
 	}
 
 	t.Log(st)
@@ -43,7 +46,10 @@ func TestStrategyMultipleActionTrees(t *testing.T) {
 	}
 
 	if len(st.Outbound) != 2 {
-		t.Errorf("strategy should have 2 outbound action trees, but has %d", len(st.Outbound))
+		t.Errorf(
+			"strategy should have 2 outbound action trees, but has %d",
+			len(st.Outbound),
+		)
 	}
 
 	if len(st.Inbound) != 1 {

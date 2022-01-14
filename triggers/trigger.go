@@ -28,7 +28,8 @@ type Trigger interface {
 }
 
 // ParseTrigger parses a string representation of a trigger into the actual Trigger object.
-// If the string is malformed, and error will be returned instead.
+//
+// If the string is malformed, an error will be returned instead.
 func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
 	if _, err := s.Expect("["); err != nil {
 		return nil, errors.Wrap(internal.EOFUnexpected(err))

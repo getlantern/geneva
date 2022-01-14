@@ -16,5 +16,6 @@ func (a *SendAction) String() string {
 }
 
 // DefaultSendAction is the default send action.
+//
 // (SendAction is so simple that there is no need to allocate more than one.)
 var DefaultSendAction = &SendAction{}

@@ -1,16 +1,19 @@
 // Package strategy provides types and functions for creating Geneva strategies.
 //
-// A Geneva strategy consists of zero or more action trees that can be applied to inbound or outbound packets. The
-// actions trees encode what actions to take on a packet. A strategy, conceptually, looks like this:
+// A Geneva strategy consists of zero or more action trees that can be applied to inbound or
+// outbound packets. The actions trees encode what actions to take on a packet. A strategy,
+// conceptually, looks like this:
 //
-//  inbound \/ outbound
+//  outbound \/ inbound
 //
-// "inbound" and "outbound" are ordered lists of (trigger, action tree) pairs. The Geneva paper calls these ordered
-// lists "forests". The inbound and outbound forests are separated by the "\/" characters; if the strategy omits one or
-// the other, then that side of the "\/" is left empty. For example, a strategy that only includes an inbound forest
-// would take the form "inbound \/", whereas an outbound-only strategy would be "\/ outbound".
+// "outbound" and "inbound" are ordered lists of (trigger, action tree) pairs. The Geneva paper
+// calls these ordered lists "forests". The outbound and inbound forests are separated by the "\/"
+// characters; if the strategy omits one or the other, then that side of the "\/" is left empty. For
+// example, a strategy that only includes an outbound forest would take the form "outbound \/",
+// whereas an inbound-only strategy would be "\/ inbound".
 //
-// A real example, taken from https://geneva.cs.umd.edu/papers/geneva_ccs19.pdf (pg 2202), would look like this:
+// A real example, taken from https://geneva.cs.umd.edu/papers/geneva_ccs19.pdf (pg 2202), would
+// look like this:
 //
 //  [TCP:flags:S]-
 //     duplicate(
@@ -19,10 +22,10 @@
 //         send)-| \/
 //  [TCP:flags:R]-drop-|
 //
-// In this example, the inbound forest would trigger on TCP packets that have just the SYN flag set, and would
-// perform a few different actions on those packets. The outbound forest would only apply to TCP packets with the
-// RST flag set, and would simply drop them. Each of the forests in the example are made up of a single (trigger, action
-// tree) pair.
+// In this example, the outbound forest would trigger on TCP packets that have just the SYN flag
+// set, and would perform a few different actions on those packets. The inbound forest would only
+// apply to TCP packets with the RST flag set, and would simply drop them. Each of the forests in
+// the example are made up of a single (trigger, action tree) pair.
 package strategy
 
 import (
@@ -40,7 +43,8 @@ import (
 // Forest refers to an ordered list of (trigger, action tree) pairs.
 type Forest []*actions.ActionTree
 
-// Strategy is the top-level Geneva construct that describes potential inbound and outbound changes to packets.
+// Strategy is the top-level Geneva construct that describes potential inbound and outbound changes
+// to packets.
 type Strategy struct {
 	Inbound  Forest
 	Outbound Forest
@@ -58,9 +62,11 @@ func (d Direction) String() string {
 }
 
 const (
-	// DirectionInbound indicates a packet received from a remote host (i.e., inbound or ingress traffic).
+	// DirectionInbound indicates a packet received from a remote host (i.e., inbound or ingress
+	// traffic).
 	DirectionInbound Direction = iota
-	// DirectionOutbound indicates a packet to be sent to a remote host (i.e., outbound or egress traffic).
+	// DirectionOutbound indicates a packet to be sent to a remote host (i.e., outbound or
+	// egress traffic).
 	DirectionOutbound
 )
 
@@ -87,12 +93,13 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 
 	for i, at := range forest {
 		// Each action tree in a forest must get a "fresh" copy of the original packet.
-		// That said, we try to avoid an extra memory copy in the (highly likely) event that each forest
-		// consists of a single action tree.
+		// That said, we try to avoid an extra memory copy in the (highly likely) event that
+		// each forest consists of a single action tree.
 		pkt := packet
 
 		if len(forest) > 1 {
-			// no idea why we'd ever get a packet with no layers, but this is probably better than a panic.
+			// no idea why we'd ever get a packet with no layers, but this is probably
+			// better than a panic.
 			if layers := packet.Layers(); len(layers) > 0 {
 				opts := gopacket.DecodeOptions{}
 				pkt = gopacket.NewPacket(packet.Data(), layers[0].LayerType(), opts)
@@ -121,7 +128,8 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 }
 
 // ParseStrategy parses a string representation of a strategy into the actual Strategy object.
-// If the string is malformed, and error will be returned instead.
+//
+// If the string is malformed, an error will be returned instead.
 func ParseStrategy(strategy string) (*Strategy, error) {
 	// outbound-tree \/ inbound-tree
 	s := scanner.NewScanner(strings.TrimSpace(strategy))
@@ -150,7 +158,8 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 		s.Chomp()
 
 		if _, err = s.Peek(); gerrors.Is(err, io.EOF) {
-			// there is no inbound strategy, and this strategy didn't end with the \/ delimiter.
+			// there is no inbound strategy, and this strategy didn't end with the \/
+			// delimiter.
 			return st, nil
 		}
 	}
@@ -168,7 +177,8 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 	s.Chomp()
 
 	for {
-		// before we try to parse the inbound strategy, let's first make sure there's one there at all.
+		// before we try to parse the inbound strategy, let's first make sure there's one
+		// there at all.
 		if _, err := s.Peek(); err != nil && gerrors.Is(err, io.EOF) {
 			// looks like we don't have an inbound strategy, so we're done!
 			break
@@ -185,7 +195,7 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 	return st, nil
 }
 
-// String returns a string representation of this strategy.
+// String returns a string representation of this Strategy.
 func (s *Strategy) String() string {
 	inbound := make([]string, 0, 1)
 	outbound := make([]string, 0, 1)

@@ -9,7 +9,8 @@ import (
 	"github.com/google/gopacket"
 )
 
-// DuplicateAction is a Geneva action that duplicates a packet and applies separate action trees to each.
+// DuplicateAction is a Geneva action that duplicates a packet and applies separate action trees to
+// each.
 type DuplicateAction struct {
 	Left  Action
 	Right Action
@@ -84,7 +85,8 @@ func (a *DuplicateAction) String() string {
 }
 
 // ParseDuplicateAction parses a string representation of a "duplicate" action.
-// If the string is malformed, and error will be returned instead.
+//
+// If the string is malformed, an error will be returned instead.
 func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 	var err error
 

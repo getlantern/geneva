@@ -15,9 +15,9 @@ import (
 
 // ActionTree represents a Geneva (trigger, action) pair.
 //
-// Technically, Geneva uses the term "action tree" to refer to the tree of actions in the tuple (trigger, action
-// tree). In other words, RootAction here is what they call the "action tree". They have no name for the (trigger,
-// action tree) tuple, which this type actually represents.
+// Technically, Geneva uses the term "action tree" to refer to the tree of actions in the tuple
+// (trigger, action tree). In other words, RootAction here is what they call the "action tree". They
+// have no name for the (trigger, action tree) tuple, which this type actually represents.
 type ActionTree struct {
 	// Trigger is the trigger that will fire this action tree if matched.
 	Trigger triggers.Trigger
@@ -36,7 +36,8 @@ func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
 	return r, errors.Wrap(err)
 }
 
-// Apply applies this action tree to the packet, returning zero or more potentially-modified packets.
+// Apply applies this action tree to the packet, returning zero or more potentially-modified
+// packets.
 func (at *ActionTree) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 	r, err := at.RootAction.Apply(packet)
 	return r, errors.Wrap(err)
@@ -69,13 +70,15 @@ func ParseActionTree(s *scanner.Scanner) (*ActionTree, error) {
 
 // Action is implemented by any value that describes a Geneva action.
 type Action interface {
-	// Apply applies the action to the packet, returning zero or more potentially-modified packets.
+	// Apply applies the action to the packet, returning zero or more potentially-modified
+	// packets.
 	Apply(gopacket.Packet) ([]gopacket.Packet, error)
 	fmt.Stringer
 }
 
 // ParseAction parses a string representation of an action into the actual Action object.
-// If the string is malformed, and error will be returned instead.
+//
+// If the string is malformed, an error will be returned instead.
 func ParseAction(s *scanner.Scanner) (Action, error) {
 	if s.FindToken("duplicate", true) {
 		return ParseDuplicateAction(s)

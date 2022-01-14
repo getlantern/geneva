@@ -148,7 +148,10 @@ func parseAction(graph *cgraph.Graph, action actions.Action) (*cgraph.Node, erro
 	}
 }
 
-func parseDuplicateAction(graph *cgraph.Graph, action *actions.DuplicateAction) (*cgraph.Node, error) {
+func parseDuplicateAction(
+	graph *cgraph.Graph,
+	action *actions.DuplicateAction,
+) (*cgraph.Node, error) {
 	node, err := graph.CreateNode(name("duplicate"))
 	if err != nil {
 		return nil, fmt.Errorf("error creating node: %w", err)
@@ -179,7 +182,10 @@ func parseDuplicateAction(graph *cgraph.Graph, action *actions.DuplicateAction) 
 	return node, nil
 }
 
-func parseFragmentAction(graph *cgraph.Graph, action *actions.FragmentAction) (*cgraph.Node, error) {
+func parseFragmentAction(
+	graph *cgraph.Graph,
+	action *actions.FragmentAction,
+) (*cgraph.Node, error) {
 	node, err := graph.CreateNode(name("fragment"))
 	if err != nil {
 		return nil, fmt.Errorf("error creating node: %w", err)

@@ -49,7 +49,8 @@ func IPFields() map[IPField]string {
 	}
 }
 
-// ParseIPField parses a field name and returns an IPField, or an error if the field is not supported.
+// ParseIPField parses a field name and returns an IPField, or an error if the field is not
+// supported.
 func ParseIPField(field string) (IPField, error) {
 	for k, v := range IPFields() {
 		if field == v {
@@ -169,8 +170,9 @@ func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
 	trigger := &IPTrigger{f, value, gas, 0}
 
 	if f == IPFieldFlags {
-		// The original Geneva project heavily relies on Scapy for processing. Due to this, we need to convert
-		// from scapy's string representations to gopacket's more structured ones.
+		// The original Geneva project heavily relies on Scapy for processing. Due to this,
+		// we need to convert from scapy's string representations to gopacket's more
+		// structured ones.
 		for _, flag := range strings.Split(value, "+") {
 			switch strings.ToLower(flag) {
 			case "mf":

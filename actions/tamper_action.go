@@ -40,7 +40,8 @@ type TamperAction struct {
 	Proto string
 	// Field is the layer field to modify.
 	Field string
-	// NewValue is the new value to which the Field should be set. This is only relevant for "replace" mode.
+	// NewValue is the new value to which the Field should be set. This is only relevant for
+	// "replace" mode.
 	NewValue string
 	// Mode indicates how the modification should happen.
 	Mode TamperMode
@@ -90,7 +91,10 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	case "udp":
 		action.Proto = "UDP"
 	default:
-		return nil, errors.New("invalid tamper rule: %q is not a recognized protocol", fields[0])
+		return nil, errors.New(
+			"invalid tamper rule: %q is not a recognized protocol",
+			fields[0],
+		)
 	}
 
 	action.Field = fields[1]
@@ -102,7 +106,10 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	case "corrupt":
 		action.Mode = TamperCorrupt
 	default:
-		return nil, errors.New("invalid tamper mode: %q must be either 'replace' or 'corrupt'", fields[2])
+		return nil, errors.New(
+			"invalid tamper mode: %q must be either 'replace' or 'corrupt'",
+			fields[2],
+		)
 	}
 
 	if _, err := s.Expect("("); err != nil {

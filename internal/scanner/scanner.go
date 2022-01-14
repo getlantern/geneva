@@ -25,7 +25,8 @@ func (l *Scanner) Pos() int {
 	return l.currentPosition
 }
 
-// Peek returns the next rune without consuming it. It returns io.EOF if the scanner is at the end of the source.
+// Peek returns the next rune without consuming it. It returns io.EOF if the scanner is at the end
+// of the source.
 func (l *Scanner) Peek() (rune, error) {
 	if l.currentPosition >= len(l.rest) {
 		return 0, io.EOF
@@ -34,7 +35,8 @@ func (l *Scanner) Peek() (rune, error) {
 	return l.rest[l.currentPosition], nil
 }
 
-// Pop returns the next rune and consumes it. It returns io.EOF if the scanner is at the end of the source.
+// Pop returns the next rune and consumes it. It returns io.EOF if the scanner is at the end of the
+// source.
 func (l *Scanner) Pop() (rune, error) {
 	b, err := l.Peek()
 	if err != nil {
@@ -46,7 +48,8 @@ func (l *Scanner) Pop() (rune, error) {
 	return b, nil
 }
 
-// Expect tells the scanner that the given token must be found at the current position, and consumes it.
+// Expect tells the scanner that the given token must be found at the current position, and consumes
+// it.
 //
 // If it is not found, it will return an error and the scanner position will not change.
 func (l *Scanner) Expect(token string) (string, error) {
@@ -56,7 +59,11 @@ func (l *Scanner) Expect(token string) (string, error) {
 
 	for i, c := range token {
 		if l.rest[l.currentPosition+i] != c {
-			return "", errors.New("expected token %q not found at position %d", token, l.currentPosition)
+			return "", errors.New(
+				"expected token %q not found at position %d",
+				token,
+				l.currentPosition,
+			)
 		}
 	}
 
@@ -65,7 +72,8 @@ func (l *Scanner) Expect(token string) (string, error) {
 	return token, nil
 }
 
-// FindToken returns true if it finds the at the current position, and false otherwise. It does not consume the token.
+// FindToken returns true if it finds the at the current position, and false otherwise. It does not
+// consume the token.
 //
 // FindToken will perform a case-insensitive match if caseSensitive = false.
 func (l *Scanner) FindToken(token string, caseSensitive bool) bool {
@@ -90,7 +98,8 @@ func (l *Scanner) FindToken(token string, caseSensitive bool) bool {
 	return true
 }
 
-// Until searches for the next occurrence of r and returns the string from the starting position to right before r.
+// Until searches for the next occurrence of r and returns the string from the starting position to
+// right before r.
 //
 // All runes from the starting position to r are consumed. r is not consumed.
 func (l *Scanner) Until(r rune) (string, error) {

@@ -80,7 +80,7 @@ func TestParseTriggerFailure(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 
-		t.Run(fmt.Sprintf(`"%s"`, tc), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%q", tc), func(t *testing.T) {
 			t.Parallel()
 
 			l := scanner.NewScanner(tc)
@@ -134,7 +134,7 @@ func TestTCPStringify(t *testing.T) {
 	}
 
 	if trigger.String() != expected {
-		t.Fatalf(`got "%s", expected "%s"`, trigger.String(), expected)
+		t.Fatalf("got %q, expected %q", trigger.String(), expected)
 	}
 }
 
@@ -157,7 +157,7 @@ func TestIPStringify(t *testing.T) {
 	}
 
 	if trigger.String() != expected {
-		t.Fatalf(`got "%s", expected "%s"`, trigger.String(), expected)
+		t.Fatalf("got %q, expected %q", trigger.String(), expected)
 	}
 }
 
@@ -220,7 +220,7 @@ func TestIPTriggers(t *testing.T) {
 	for _, tc := range tt {
 		tc := tc
 
-		t.Run(fmt.Sprintf(`"%s"`, tc.name), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%q", tc.name), func(t *testing.T) {
 			t.Parallel()
 
 			trigger, _ := triggers.NewIPTrigger(tc.field, tc.value, 0)

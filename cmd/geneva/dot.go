@@ -26,7 +26,7 @@ func dot(c *cli.Context) error { //nolint:cyclop
 
 	output := c.String("output")
 	if output == "" {
-		return cli.Exit(fmt.Sprintf("invalid output filename: `%s`", output), 1)
+		return cli.Exit(fmt.Sprintf("invalid output filename: %q", output), 1)
 	}
 
 	strategy, err := geneva.NewStrategy(input)

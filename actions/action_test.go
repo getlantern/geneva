@@ -157,7 +157,7 @@ func TestParseFragmentAction(t *testing.T) {
 
 	for _, tc := range tests {
 		tc := tc
-		t.Run(fmt.Sprintf(`"%s"`, tc), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%q", tc), func(t *testing.T) {
 			t.Parallel()
 			l := scanner.NewScanner(tc)
 			_, err := actions.ParseAction(l)
@@ -566,7 +566,7 @@ func TestActionCanonicalization(t *testing.T) {
 			}
 
 			if a.String() != tc.expected {
-				t.Errorf(`expected "%s", got "%s"`, tc.expected, a)
+				t.Errorf("expected %q, got %q", tc.expected, a)
 			}
 		})
 	}

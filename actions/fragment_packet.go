@@ -21,7 +21,7 @@ import (
 // fragmented packet). If the Proto's header includes a checksum, it will be recomputed.
 type FragmentAction struct {
 	// Proto is the protocol layer where the packet will be fragmented.
-	Proto string
+	proto gopacket.LayerType
 	// FragSize is the offset into the protocol's payload where fragmentation will happen.
 	FragSize int
 	// InOrder specifies whether to return the fragments in order.
@@ -33,6 +33,19 @@ type FragmentAction struct {
 	SecondFragmentAction Action
 }
 
+func (a *FragmentAction) Proto() string {
+	switch a.proto {
+	case layers.LayerTypeIPv4:
+		return "IP"
+	case layers.LayerTypeTCP:
+		return "TCP"
+	case layers.LayerTypeUDP:
+		return "UDP"
+	default:
+		return ""
+	}
+}
+
 // Apply applies this action to the given packet.
 func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 	var (
@@ -41,11 +54,11 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 		lpackets, rpackets []gopacket.Packet
 	)
 
-	switch a.Proto {
-	case "IP":
+	switch a.proto {
+	case layers.LayerTypeIPv4:
 		// Note: the original Geneva code only fragments IPv4, not IPv6.
 		packets, err = FragmentIPPacket(packet, a.FragSize)
-	case "TCP":
+	case layers.LayerTypeTCP:
 		packets, err = FragmentTCPSegment(packet, a.FragSize)
 	default:
 		// nolint: godox
@@ -319,7 +332,7 @@ func (a *FragmentAction) String() string {
 	}
 
 	return fmt.Sprintf("fragment{%s:%d:%t}%s",
-		a.Proto, a.FragSize, a.InOrder, actStr)
+		a.Proto(), a.FragSize, a.InOrder, actStr)
 }
 
 // ParseFragmentAction parses a string representation of a "fragment" action.
@@ -345,11 +358,11 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 
 	switch strings.ToLower(fields[0]) {
 	case "ip":
-		action.Proto = "IP"
+		action.proto = layers.LayerTypeIPv4
 	case "tcp":
-		action.Proto = "TCP"
+		action.proto = layers.LayerTypeTCP
 	case "udp":
-		action.Proto = "UDP"
+		action.proto = layers.LayerTypeUDP
 	default:
 		return nil, errors.New("invalid fragment rule: %q is not a recognized protocol", fields[0])
 	}

@@ -188,7 +188,7 @@ func parseFragmentAction(graph *cgraph.Graph, action *actions.FragmentAction) (*
 	node.SetShape("record")
 	node.SetLabel(
 		fmt.Sprintf("fragment|{proto:%s|offset:%d|inOrder:%v}",
-			action.Proto, action.FragSize, action.InOrder))
+			action.Proto(), action.FragSize, action.InOrder))
 
 	lnode, err := parseAction(graph, action.FirstFragmentAction)
 	if err != nil {

@@ -14,34 +14,50 @@ import (
 // IPField is the type of a supported IP field.
 type IPField int
 
+const (
+	IPFieldVersion = iota
+	IPFieldIHL
+	IPFieldTOS
+	IPFieldLength
+	IPFieldIdentification
+	IPFieldFlags
+	IPFieldFragmentOffset
+	IPFieldTTL
+	IPFieldProtocol
+	IPFieldChecksum
+	IPFieldSourceAddress
+	IPFieldDestAddress
+	IPFieldPayload
+)
+
 // IPFields returns a list of the fields supported by the IP trigger.
-func IPFields() []string {
-	return []string{
-		"version",
-		"ihl",
-		"tos",
-		"len",
-		"id",
-		"flags",
-		"frag",
-		"ttl",
-		"proto",
-		"chksum",
-		"src",
-		"dst",
-		"load",
+func IPFields() map[IPField]string {
+	return map[IPField]string{
+		IPFieldVersion:        "version",
+		IPFieldIHL:            "ihl",
+		IPFieldTOS:            "tos",
+		IPFieldLength:         "len",
+		IPFieldIdentification: "id",
+		IPFieldFlags:          "flags",
+		IPFieldFragmentOffset: "frag",
+		IPFieldTTL:            "ttl",
+		IPFieldProtocol:       "proto",
+		IPFieldChecksum:       "chksum",
+		IPFieldSourceAddress:  "src",
+		IPFieldDestAddress:    "dst",
+		IPFieldPayload:        "load",
 	}
 }
 
 // ParseIPField parses a field name and returns an IPField, or an error if the field is not supported.
 func ParseIPField(field string) (IPField, error) {
-	for i, v := range IPFields() {
+	for k, v := range IPFields() {
 		if field == v {
-			return IPField(i), nil
+			return k, nil
 		}
 	}
 
-	return IPField(0), errors.New("unknown IP field %q", field)
+	return IPField(-1), errors.New("unknown IP field %q", field)
 }
 
 // IPTrigger is a Trigger that matches on the IP layer.
@@ -49,6 +65,8 @@ type IPTrigger struct {
 	field IPField
 	value string
 	gas   int
+
+	ipField layers.IPv4Flag
 }
 
 // String returns a string representation of this trigger.
@@ -84,30 +102,14 @@ func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 		return false, nil
 	}
 
-	switch t.Field() {
-	case "flags":
-		var val layers.IPv4Flag
-		// The original Geneva project heavily relies on Scapy for processing. Due to this, we need to convert
-		// from scapy's string representations to gopacket's more structured ones.
-		for _, flag := range strings.Split(t.value, "+") {
-			switch strings.ToLower(flag) {
-			case "mf":
-				val |= layers.IPv4MoreFragments
-			case "df":
-				val |= layers.IPv4DontFragment
-			case "evil":
-				val |= layers.IPv4EvilBit
-			}
-		}
-
-		return (ipLayer.Flags == val), nil
-	case "src":
-		ipAddr := net.ParseIP(t.value)
-		return ipLayer.SrcIP.Equal(ipAddr), nil //nolint:nlreturn
-	case "dst":
-		ipAddr := net.ParseIP(t.value)
-		return ipLayer.DstIP.Equal(ipAddr), nil //nolint:nlreturn
-	case "load":
+	switch t.field {
+	case IPFieldFlags:
+		return (ipLayer.Flags == t.ipField), nil
+	case IPFieldSourceAddress:
+		return ipLayer.SrcIP.Equal(net.ParseIP(t.value)), nil
+	case IPFieldDestAddress:
+		return ipLayer.DstIP.Equal(net.ParseIP(t.value)), nil
+	case IPFieldPayload:
 		if len(ipLayer.Payload) < len(t.value) {
 			return false, nil
 		}
@@ -129,24 +131,24 @@ func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 
 	v := uint16(tmp)
 
-	switch t.Field() {
-	case "version":
+	switch t.field {
+	case IPFieldVersion:
 		return (uint16(ipLayer.Version) == v), nil
-	case "ihl":
+	case IPFieldIHL:
 		return (uint16(ipLayer.IHL) == v), nil
-	case "tos":
+	case IPFieldTOS:
 		return (uint16(ipLayer.TOS) == v), nil
-	case "len":
+	case IPFieldLength:
 		return (ipLayer.Length == v), nil
-	case "id":
+	case IPFieldIdentification:
 		return (ipLayer.Id == v), nil
-	case "frag":
+	case IPFieldFragmentOffset:
 		return (ipLayer.FragOffset == v), nil
-	case "ttl":
+	case IPFieldTTL:
 		return (uint16(ipLayer.TTL) == v), nil
-	case "proto":
+	case IPFieldProtocol:
 		return (uint16(ipLayer.Protocol) == v), nil
-	case "chksum":
+	case IPFieldChecksum:
 		return (ipLayer.Checksum == v), nil
 	default:
 		return false, errors.New("IPTrigger.Matches(%s) is unimplemented", t.Field())
@@ -170,5 +172,22 @@ func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
 		return nil, errors.Wrap(err)
 	}
 
-	return &IPTrigger{f, value, gas}, nil
+	trigger := &IPTrigger{f, value, gas, 0}
+
+	if f == IPFieldFlags {
+		// The original Geneva project heavily relies on Scapy for processing. Due to this, we need to convert
+		// from scapy's string representations to gopacket's more structured ones.
+		for _, flag := range strings.Split(value, "+") {
+			switch strings.ToLower(flag) {
+			case "mf":
+				trigger.ipField |= layers.IPv4MoreFragments
+			case "df":
+				trigger.ipField |= layers.IPv4DontFragment
+			case "evil":
+				trigger.ipField |= layers.IPv4EvilBit
+			}
+		}
+	}
+
+	return trigger, nil
 }

@@ -16,43 +16,68 @@ var ErrUnsupportedOption = gerrors.New("unsupported option")
 // TCPField is the type of a supported TCP field.
 type TCPField int
 
+const (
+	TCPFieldSourcePort = iota
+	TCPFieldDestPort
+	TCPFieldSeq
+	TCPFieldAck
+	TCPFieldDataOffset
+	TCPFieldReserved
+	TCPFieldFlags
+	TCPFieldWindow
+	TCPFieldChecksum
+	TCPFieldUrgentPointer
+	TCPFieldPayload
+	TCPFieldOptionEOL
+	TCPFieldOptionNOP
+	TCPFieldOptionMSS
+	TCPFieldOptionWScale
+	TCPFieldOptionSackOk
+	TCPFieldOptionSack
+	TCPFieldOptionTimestamp
+	TCPFieldOptionAltChecksum
+	TCPFieldOptionAltChecksumOpt
+	TCPFieldOptionMD5Header
+	TCPFieldOptionUTO
+)
+
 // TCPFields returns a list of the fields supported by the TCP trigger.
-func TCPFields() []string {
-	return []string{
-		"sport",
-		"dport",
-		"seq",
-		"ack",
-		"dataofs",
-		"reserved",
-		"flags",
-		"window",
-		"chksum",
-		"urgptr",
-		"load",
-		"options-eol",
-		"options-nop",
-		"options-mss",
-		"options-wscale",
-		"options-sackok",
-		"options-sack",
-		"options-timestamp",
-		"options-altchksum",
-		"options-altchksumopt",
-		"options-md5header",
-		"options-uto",
+func TCPFields() map[TCPField]string {
+	return map[TCPField]string{
+		TCPFieldSourcePort:           "sport",
+		TCPFieldDestPort:             "dport",
+		TCPFieldSeq:                  "seq",
+		TCPFieldAck:                  "ack",
+		TCPFieldDataOffset:           "dataofs",
+		TCPFieldReserved:             "reserved",
+		TCPFieldFlags:                "flags",
+		TCPFieldWindow:               "window",
+		TCPFieldChecksum:             "chksum",
+		TCPFieldUrgentPointer:        "urgptr",
+		TCPFieldPayload:              "load",
+		TCPFieldOptionEOL:            "options-eol",
+		TCPFieldOptionNOP:            "options-nop",
+		TCPFieldOptionMSS:            "options-mss",
+		TCPFieldOptionWScale:         "options-wscale",
+		TCPFieldOptionSackOk:         "options-sackok",
+		TCPFieldOptionSack:           "options-sack",
+		TCPFieldOptionTimestamp:      "options-timestamp",
+		TCPFieldOptionAltChecksum:    "options-altchksum",
+		TCPFieldOptionAltChecksumOpt: "options-altchksumopt",
+		TCPFieldOptionMD5Header:      "options-md5header",
+		TCPFieldOptionUTO:            "options-uto",
 	}
 }
 
 // ParseTCPField parses a field name and returns an TCPField, or an error if the field is not supported.
 func ParseTCPField(field string) (TCPField, error) {
-	for i, v := range TCPFields() {
+	for k, v := range TCPFields() {
 		if field == v {
-			return TCPField(i), nil
+			return k, nil
 		}
 	}
 
-	return TCPField(0), errors.New("unknown TCP field %s", field)
+	return TCPField(-1), errors.New("unknown TCP field %q", field)
 }
 
 // TCPTrigger is a Trigger that matches on the TCP layer.
@@ -87,6 +112,91 @@ func (t *TCPTrigger) Gas() int {
 	return t.gas
 }
 
+func matchField(value string, tcpLayer *layers.TCP) bool {
+	for _, c := range value {
+		var match bool
+
+		switch c {
+		case 'F':
+			match = tcpLayer.FIN
+		case 'S':
+			match = tcpLayer.SYN
+		case 'R':
+			match = tcpLayer.RST
+		case 'P':
+			match = tcpLayer.PSH
+		case 'A':
+			match = tcpLayer.ACK
+		case 'U':
+			match = tcpLayer.URG
+		case 'E':
+			match = tcpLayer.ECE
+		case 'C':
+			match = tcpLayer.CWR
+		case 'N':
+			match = tcpLayer.NS
+		default:
+			match = false
+		}
+
+		if !match {
+			// bail early if the trigger wants a flag set that isn't
+			return false
+		}
+	}
+
+	return true
+}
+
+func matchTCPOption(field TCPField, value string, tcpLayer *layers.TCP) (bool, error) {
+	var optKind layers.TCPOptionKind
+
+	switch field {
+	case TCPFieldOptionEOL:
+		optKind = layers.TCPOptionKindEndList
+	case TCPFieldOptionNOP:
+		optKind = layers.TCPOptionKindNop
+	case TCPFieldOptionMSS:
+		optKind = layers.TCPOptionKindMSS
+	case TCPFieldOptionWScale:
+		optKind = layers.TCPOptionKindWindowScale
+	case TCPFieldOptionSackOk:
+		optKind = layers.TCPOptionKindSACKPermitted
+	case TCPFieldOptionSack:
+		optKind = layers.TCPOptionKindSACK
+	case TCPFieldOptionTimestamp:
+		optKind = layers.TCPOptionKindTimestamps
+	case TCPFieldOptionAltChecksum:
+		optKind = layers.TCPOptionKindAltChecksumData
+	case TCPFieldOptionAltChecksumOpt:
+		optKind = layers.TCPOptionKindAltChecksum
+	case TCPFieldOptionMD5Header:
+		optKind = 19 // gopacket doesn't know about this one
+	case TCPFieldOptionUTO:
+		optKind = 28 // "User Time-Out"; also unknown to gopacket
+	default:
+		return false, ErrUnsupportedOption
+	}
+
+	for _, opt := range tcpLayer.Options {
+		if opt.OptionType == optKind {
+			if len(opt.OptionData) < len(value) {
+				return false, nil
+			}
+
+			for i, b := range opt.OptionData {
+				if b != []byte(value)[i] {
+					return false, nil
+				}
+			}
+
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // Matches returns whether the trigger matches the packet.
 func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 	tcpLayer, ok := pkt.TransportLayer().(*layers.TCP)
@@ -94,42 +204,10 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 		return false, nil
 	}
 
-	switch t.Field() {
-	case "flags":
-		for _, flag := range strings.ToUpper(t.value) {
-			var match bool
-
-			switch flag {
-			case 'F':
-				match = tcpLayer.FIN
-			case 'S':
-				match = tcpLayer.SYN
-			case 'R':
-				match = tcpLayer.RST
-			case 'P':
-				match = tcpLayer.PSH
-			case 'A':
-				match = tcpLayer.ACK
-			case 'U':
-				match = tcpLayer.URG
-			case 'E':
-				match = tcpLayer.ECE
-			case 'C':
-				match = tcpLayer.CWR
-			case 'N':
-				match = tcpLayer.NS
-			default:
-				match = false
-			}
-
-			if !match {
-				// bail early if the trigger wants a flag set that isn't
-				return false, nil
-			}
-		}
-
-		return true, nil
-	case "load":
+	switch t.field {
+	case TCPFieldFlags:
+		return matchField(t.value, tcpLayer), nil
+	case TCPFieldPayload:
 		if len(tcpLayer.Payload) < len(t.value) {
 			return false, nil
 		}
@@ -141,56 +219,12 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 		}
 
 		return true, nil
-	}
 
-	if strings.HasPrefix(t.Field(), "options-") {
-		var optKind layers.TCPOptionKind
-
-		opt := strings.Split(t.Field(), "-")[1]
-		switch opt {
-		case "eol":
-			optKind = layers.TCPOptionKindEndList
-		case "nop":
-			optKind = layers.TCPOptionKindNop
-		case "mss":
-			optKind = layers.TCPOptionKindMSS
-		case "wscale":
-			optKind = layers.TCPOptionKindWindowScale
-		case "sackok":
-			optKind = layers.TCPOptionKindSACKPermitted
-		case "sack":
-			optKind = layers.TCPOptionKindSACK
-		case "timestamp":
-			optKind = layers.TCPOptionKindTimestamps
-		case "altchksum":
-			optKind = layers.TCPOptionKindAltChecksumData
-		case "altchksumopt":
-			optKind = layers.TCPOptionKindAltChecksum
-		case "md5header":
-			optKind = 19 // gopacket doesn't know about this one
-		case "uto":
-			optKind = 28 // "User Time-Out"; also unknown to gopacket
-		default:
-			return false, ErrUnsupportedOption
-		}
-
-		for _, opt := range tcpLayer.Options {
-			if opt.OptionType == optKind {
-				if len(opt.OptionData) < len(t.value) {
-					return false, nil
-				}
-
-				for i, b := range opt.OptionData {
-					if b != []byte(t.value)[i] {
-						return false, nil
-					}
-				}
-
-				return true, nil
-			}
-		}
-
-		return false, nil
+	case TCPFieldOptionEOL, TCPFieldOptionNOP, TCPFieldOptionMSS, TCPFieldOptionWScale,
+		TCPFieldOptionSackOk, TCPFieldOptionSack, TCPFieldOptionTimestamp,
+		TCPFieldOptionAltChecksum, TCPFieldOptionAltChecksumOpt, TCPFieldOptionMD5Header,
+		TCPFieldOptionUTO:
+		return matchTCPOption(t.field, t.value, tcpLayer)
 	}
 
 	tmp, err := strconv.ParseUint(t.value, 0, 32)
@@ -200,24 +234,24 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 
 	v := uint32(tmp)
 
-	switch t.Field() {
-	case "sport":
+	switch t.field {
+	case TCPFieldSourcePort:
 		return tcpLayer.SrcPort == layers.TCPPort(v), nil
-	case "dport":
+	case TCPFieldDestPort:
 		return tcpLayer.DstPort == layers.TCPPort(v), nil
-	case "seq":
+	case TCPFieldSeq:
 		return tcpLayer.Seq == v, nil
-	case "ack":
+	case TCPFieldAck:
 		return tcpLayer.Ack == v, nil
-	case "dataofs":
+	case TCPFieldDataOffset:
 		return uint32(tcpLayer.DataOffset) == v, nil
-	case "reserved":
+	case TCPFieldReserved:
 		return (uint32((pkt.Data()[12]&0xf)>>1) == v), nil
-	case "window":
+	case TCPFieldWindow:
 		return uint32(tcpLayer.Window) == v, nil
-	case "chksum":
+	case TCPFieldChecksum:
 		return uint32(tcpLayer.Checksum) == v, nil
-	case "urgptr":
+	case TCPFieldUrgentPointer:
 		return uint32(tcpLayer.Urgent) == v, nil
 	}
 
@@ -233,6 +267,10 @@ func NewTCPTrigger(field, value string, gas int) (*TCPTrigger, error) {
 	f, err := ParseTCPField(field)
 	if err != nil {
 		return nil, errors.Wrap(err)
+	}
+
+	if f == TCPFieldFlags {
+		value = strings.ToUpper(value)
 	}
 
 	return &TCPTrigger{f, value, gas}, nil

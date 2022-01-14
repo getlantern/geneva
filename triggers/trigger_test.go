@@ -70,7 +70,6 @@ func TestParseTriggerFailure(t *testing.T) {
 		"[IP:ttl",
 		"[IP:ttl]",
 		"[IP:ttl:",
-		"[IP:ttl:]",
 		"[IP:ttl:1",
 		"[IP:ttl:1:",
 		"[IP:ttl:1:]",

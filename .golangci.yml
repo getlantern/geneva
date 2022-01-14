@@ -2,22 +2,21 @@ linters:
   enable-all: true
   disable:
     # deprecated
-    - scopelint
-    - maligned
     - golint
     - interfacer
+    - maligned
+    - scopelint
 
-    # annoying
+    # less useful
+    - cyclop
+    - exhaustivestruct
+    - forbidigo
+    - funlen
     - gochecknoglobals
-    - nolintlint
-    - varnamelen
     - gomnd
     - ireturn
-    - exhaustivestruct
-    - funlen
-    - forbidigo
-
-    - cyclop
+    - nolintlint
+    - varnamelen
 
 linters-settings:
   misspell:

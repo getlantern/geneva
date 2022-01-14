@@ -161,12 +161,6 @@ func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
 		return nil, errors.New("cannot create IP trigger with empty field")
 	}
 
-	if value == "" {
-		// XXX just like with TCP triggers, this is a false statement
-		// that needs to be fixed.
-		return nil, errors.New("cannot create IP trigger with empty value")
-	}
-
 	f, err := ParseIPField(field)
 	if err != nil {
 		return nil, errors.Wrap(err)

@@ -24,6 +24,8 @@ linters-settings:
       - strat
   nlreturn:
     block-size: 2
+  exhaustive:
+    default-signifies-exhaustive: true
 
 issues:
   exclude-rules:

@@ -3,15 +3,13 @@ module github.com/getlantern/geneva
 go 1.17
 
 require (
-	github.com/Crosse/godivert v0.0.0-20211211033615-d6ef30d8c93d
+	github.com/Crosse/godivert v0.0.0-20220114171035-c28a0cd613c8
 	github.com/getlantern/errors v1.0.1
 	github.com/goccy/go-graphviz v0.0.9
 	github.com/google/gopacket v1.1.19
 	github.com/urfave/cli/v2 v2.3.0
 	golang.org/x/sys v0.0.0-20211210111614-af8b64212486
 )
-
-replace github.com/Crosse/godivert => ../godivert
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d // indirect

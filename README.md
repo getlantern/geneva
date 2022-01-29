@@ -7,7 +7,8 @@ algoritm (_GENetic EVAsion_) that one can deploy to discover new circumventions.
 genetic algorithm.) More broadly, though, one can encode arbitrary instructions for packet manipulation using Geneva
 rules as a sort of "standard syntax", although the use case outside of censorship circumvention may be somewhat tenuous.
 
-This package aims to implement the same triggers and actions that the Geneva project's canonical Python package does.
+This package aims to implement the same triggers and actions that the Geneva project's canonical Python package
+does. _Please note: this package is a work-in-progress, and there are still things left to implement._
 
 ## Quick Background
 

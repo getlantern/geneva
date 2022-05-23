@@ -3,6 +3,7 @@ package triggers
 import (
 	gerrors "errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -237,8 +238,16 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 
 	switch t.field {
 	case TCPFieldSourcePort:
+		if v > math.MaxUint16 {
+			return false, errors.New("source port must be in the range 0-65535")
+		}
+
 		return tcpLayer.SrcPort == layers.TCPPort(v), nil
 	case TCPFieldDestPort:
+		if v > math.MaxUint16 {
+			return false, errors.New("destination port must be in the range 0-65535")
+		}
+
 		return tcpLayer.DstPort == layers.TCPPort(v), nil
 	case TCPFieldSeq:
 		return tcpLayer.Seq == v, nil

@@ -10,8 +10,10 @@ linters:
     # less useful
     - cyclop
     - exhaustivestruct
+    - exhaustruct
     - forbidigo
     - funlen
+    - gci
     - gochecknoglobals
     - gomnd
     - ireturn

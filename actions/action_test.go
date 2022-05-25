@@ -226,12 +226,13 @@ type ipFragmentResult struct {
 	ipPayloadLen  uint16
 }
 
+//nolint:thelper
 func VerifyIPFragment(
 	t *testing.T,
 	originalChecksum uint16,
 	fragIndex int,
 	result ipFragmentResult,
-) { //nolint:thelper
+) {
 	packetDumpLogged := false
 
 	// this is just so that we only print out the packet dump once--instead of every time an

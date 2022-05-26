@@ -22,14 +22,14 @@
 //
 // Let's work from the top down. A strategy, conceptually, looks like this:
 //
-//  inbound-forest \/ outbound-forest
+//  outbound-forest \/ inbound-forest
 //
-// "inbound-forest" and "outbound-forest" are ordered lists of (trigger, action tree) pairs. The
-// Geneva paper calls these ordered lists "forests". The inbound and outbound forests are separated
+// "outbound-forest" and "inbound-forest" are ordered lists of (trigger, action tree) pairs. The
+// Geneva paper calls these ordered lists "forests". The outbound and inbound forests are separated
 // by the "\/" characters (that is a backslash followed by a forward-slash); if the strategy omits
 // one or the other, then that side of the "\/" is left empty. For example, a strategy that only
-// includes an inbound forest would take the form "inbound \/", whereas an outbound-only strategy
-// would be "\/ outbound".
+// includes an outbound forest would take the form "outbound \/", whereas an inbound-only strategy
+// would be "\/ inbound".
 //
 // The original Geneva paper does not have a name for these (trigger, action tree) pairs. In
 // practice, however, the Python code actually defines an action tree as a (trigger, action) pair,
@@ -39,10 +39,14 @@
 // A real example, taken from https://geneva.cs.umd.edu/papers/geneva_ccs19.pdf (pg 2202), would
 // look like this:
 //
-//  [TCP:flags:S]- duplicate( tamper{TCP:flags:replace:SA}( send), send)-| \/ [TCP:flags:R]-drop-|
+//  [TCP:flags:S]-
+//      duplicate(
+//        tamper{TCP:flags:replace:SA}(send),
+//        send)-| \/
+//  [TCP:flags:R]-drop-|
 //
-// In this example, the inbound forest would trigger on TCP packets that have just the SYN flag set,
-// and would perform a few different actions on those packets. The outbound forest would only apply
+// In this example, the outbound forest would trigger on TCP packets that have just the SYN flag set,
+// and would perform a few different actions on those packets. The inbound forest would only apply
 // to TCP packets with the RST flag set, and would simply drop them. Each of the forests in the
 // example are made up of a single (trigger, action tree) pair.
 //

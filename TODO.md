@@ -1,6 +1,6 @@
-- [ ] Update package-level documentation with README changes
+- [x] Update package-level documentation with README changes
 - [x] Do not use strings in switch statements in triggers
-- [ ] Add tests for TCP triggers
+- [x] Add tests for TCP triggers
 - [ ] Add any missing documentation
 - [x] Strategies should pass fresh packets to each action tree in a forest
 - [x] Feed parsed/validated strategies back in to make sure they're correct

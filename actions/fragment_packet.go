@@ -61,7 +61,7 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 		// Note: the original Geneva code only fragments IPv4, not IPv6.
 		packets, err = FragmentIPPacket(packet, a.FragSize)
 	case layers.LayerTypeTCP:
-		packets, err = FragmentTCPSegment(packet, a.FragSize)
+		packets, err = fragmentTCPSegment(packet, a.FragSize)
 	default:
 		// nolint: godox
 		// TODO: should we log this?
@@ -87,7 +87,7 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	return append(lpackets, rpackets...), nil
 }
 
-func FragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, error) {
+func fragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, error) {
 	// XXX: the original Geneva code does not seem to handle TCP segmentation for IPv6 packets,
 	// so we don't either for now.
 	if packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {

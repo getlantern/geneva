@@ -1,3 +1,6 @@
+// Package triggers enumerates all of the various triggers that can be used to match packets.
+//
+// See the top-level documentation for more details.
 package triggers
 
 import (

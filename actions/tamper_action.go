@@ -12,6 +12,7 @@ import (
 // TamperMode describes the way that the "tamper" action can manipulate a packet.
 type TamperMode int
 
+// String returns a string representation of the tamper mode.
 func (tm TamperMode) String() string {
 	switch tm {
 	case TamperReplace:
@@ -54,6 +55,7 @@ func (a *TamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) 
 	return nil, errors.New("tamper action unimplemented")
 }
 
+// String returns a string representation of this Action.
 func (a *TamperAction) String() string {
 	newValue := ""
 	if a.Mode == TamperReplace {
@@ -64,6 +66,9 @@ func (a *TamperAction) String() string {
 		a.Proto, a.Field, a.Mode, newValue, a.Action)
 }
 
+// ParseTamperAction parses a string representation of a "tamper" action.
+//
+// If the string is malformed, an error will be returned instead.
 func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	if _, err := s.Expect("tamper{"); err != nil {
 		return nil, errors.New("invalid tamper rule: %v", err)

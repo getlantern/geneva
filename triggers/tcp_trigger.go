@@ -12,6 +12,7 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+// ErrUnsupportedOption is returned when an unsupported TCP option is specified in a trigger rule.
 var ErrUnsupportedOption = gerrors.New("unsupported option")
 
 // TCPField is the type of a supported TCP field.

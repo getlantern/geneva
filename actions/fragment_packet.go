@@ -300,6 +300,7 @@ func ComputeIPv4Checksum(header []byte) uint16 {
 	return chksum
 }
 
+// ComputeTCPChecksum computes the checksum field of a TCP header.
 func ComputeTCPChecksum(ipHeader, tcpHeader, payload []byte) uint16 {
 	c := internal.OnesComplementChecksum{}
 
@@ -335,6 +336,7 @@ func ComputeTCPChecksum(ipHeader, tcpHeader, payload []byte) uint16 {
 	return c.Finalize()
 }
 
+// VerifyTCPChecksum verifies whether a TCP header's checksum field is correct.
 func VerifyTCPChecksum(ipHeader, tcpHeader, payload []byte) bool {
 	c := internal.OnesComplementChecksum{}
 	c.Add(ComputeTCPChecksum(ipHeader, tcpHeader, payload))

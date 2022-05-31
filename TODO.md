@@ -1,7 +1,7 @@
 - [x] Update package-level documentation with README changes
 - [x] Do not use strings in switch statements in triggers
 - [x] Add tests for TCP triggers
-- [ ] Add any missing documentation
+- [x] Add any missing documentation
 - [x] Strategies should pass fresh packets to each action tree in a forest
 - [x] Feed parsed/validated strategies back in to make sure they're correct
 - [x] Handle frag offset of -1

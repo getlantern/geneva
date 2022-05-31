@@ -4,27 +4,33 @@
 // outbound packets. The actions trees encode what actions to take on a packet. A strategy,
 // conceptually, looks like this:
 //
-//  outbound \/ inbound
 //
-// "outbound" and "inbound" are ordered lists of (trigger, action tree) pairs. The Geneva paper
-// calls these ordered lists "forests". The outbound and inbound forests are separated by the "\/"
-// characters; if the strategy omits one or the other, then that side of the "\/" is left empty. For
-// example, a strategy that only includes an outbound forest would take the form "outbound \/",
-// whereas an inbound-only strategy would be "\/ inbound".
+//   outbound-forest \/ inbound-forest
 //
-// A real example, taken from https://geneva.cs.umd.edu/papers/geneva_ccs19.pdf (pg 2202), would
-// look like this:
+// "outbound-forest" and "inbound-forest" are ordered lists of "(trigger, action tree)" pairs. The
+// Geneva paper calls these ordered lists "forests". The outbound and inbound forests are separated
+// by the `\/` characters (that is a backslash followed by a forward-slash); if the strategy omits
+// one or the other, then that side of the `\/` is left empty. For example, a strategy that only
+// includes an outbound forest would take the form `outbound \/`, whereas an inbound-only strategy
+// would be `\/ inbound`.
 //
-//  [TCP:flags:S]-
-//     duplicate(
-//        tamper{TCP:flags:replace:SA}(
-//           send),
-//         send)-| \/
-//  [TCP:flags:R]-drop-|
+// The original Geneva paper does not have a name for these (trigger, action tree) pairs. In
+// practice, however, the Python code actually defines an action tree as a (trigger, action) pair,
+// where the "action" is the root of a tree of actions. This package follows this nomenclature as
+// well.
 //
-// In this example, the outbound forest would trigger on TCP packets that have just the SYN flag
+// A real example, taken from the [original paper][geneva-paper] (pg 2202), would look like this:
+//
+//     [TCP:flags:S]-
+//        duplicate(
+//           tamper{TCP:flags:replace:SA}(
+//              send),
+//            send)-| \/
+//     [TCP:flags:R]-drop-|
+//
+// In this example, the outbound forest would trigger on TCP packets that have just the `SYN` flag
 // set, and would perform a few different actions on those packets. The inbound forest would only
-// apply to TCP packets with the RST flag set, and would simply drop them. Each of the forests in
+// apply to TCP packets with the `RST` flag set, and would simply drop them. Each of the forests in
 // the example are made up of a single (trigger, action tree) pair.
 package strategy
 
@@ -53,6 +59,7 @@ type Strategy struct {
 // Direction is the direction of a packet: either inbound (ingress) or outbound (egress).
 type Direction int
 
+// String returns a string representation of the direction (either "inbound" or "outbound").
 func (d Direction) String() string {
 	if d == DirectionInbound {
 		return "inbound"

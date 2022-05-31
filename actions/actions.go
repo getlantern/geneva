@@ -1,3 +1,6 @@
+// Package actions describes the actions that can be applied to a given packet.
+//
+// See the top-level documentation for more details.
 package actions
 
 import (

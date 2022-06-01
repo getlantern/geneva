@@ -1,10 +1,10 @@
 package actions
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/getlantern/errors"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
 )
@@ -71,19 +71,19 @@ func (a *TamperAction) String() string {
 // If the string is malformed, an error will be returned instead.
 func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	if _, err := s.Expect("tamper{"); err != nil {
-		return nil, errors.New("invalid tamper rule: %v", err)
+		return nil, fmt.Errorf("invalid tamper rule: %w", err)
 	}
 
 	str, err := s.Until('}')
 	if err != nil {
-		return nil, errors.New("invalid tamper rule: %v", err)
+		return nil, fmt.Errorf("invalid tamper rule: %w", err)
 	}
 
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
 	if len(fields) < 3 || len(fields) > 4 {
-		return nil, errors.New("invalid fields for tamper rule: %s", str)
+		return nil, fmt.Errorf("invalid fields for tamper rule: %s", str)
 	}
 
 	action := &TamperAction{}
@@ -96,7 +96,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	case "udp":
 		action.Proto = "UDP"
 	default:
-		return nil, errors.New(
+		return nil, fmt.Errorf(
 			"invalid tamper rule: %q is not a recognized protocol",
 			fields[0],
 		)
@@ -111,7 +111,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	case "corrupt":
 		action.Mode = TamperCorrupt
 	default:
-		return nil, errors.New(
+		return nil, fmt.Errorf(
 			"invalid tamper mode: %q must be either 'replace' or 'corrupt'",
 			fields[2],
 		)
@@ -127,7 +127,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 		if c, err2 := s.Peek(); err2 == nil && c == ')' {
 			action.Action = &SendAction{}
 		} else {
-			return nil, errors.New("invalid action for tamper rule: %v", err)
+			return nil, fmt.Errorf("invalid action for tamper rule: %w", err)
 		}
 	}
 
@@ -138,7 +138,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	}
 
 	if _, err := s.Expect(")"); err != nil {
-		return nil, errors.New("invalid tamper rule: %v", err)
+		return nil, fmt.Errorf("unexpected token in tamper rule: %w", err)
 	}
 
 	return action, nil

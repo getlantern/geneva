@@ -1,9 +1,9 @@
 package actions
 
 import (
+	"errors"
 	"fmt"
 
-	"github.com/getlantern/errors"
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
@@ -51,15 +51,21 @@ func (a *DuplicateAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 	)
 
 	if duped, err = duplicate(packet); err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf("failed to duplciate packet: %w", err)
 	}
 
 	if lpackets, err = a.Left.Apply(duped[0]); err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf(
+			"failed to apply action tree to first duplicate packet: %w",
+			err,
+		)
 	}
 
 	if rpackets, err = a.Right.Apply(duped[1]); err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf(
+			"failed to apply action tree to second duplicate packet: %w",
+			err,
+		)
 	}
 
 	return append(lpackets, rpackets...), nil
@@ -93,7 +99,10 @@ func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 	action := &DuplicateAction{}
 
 	if _, err = s.Expect("duplicate"); err != nil {
-		return nil, errors.New("invalid duplicate rule: %v", internal.EOFUnexpected(err))
+		return nil, fmt.Errorf(
+			"unexpected token in duplicate rule: %w",
+			internal.EOFUnexpected(err),
+		)
 	}
 
 	// rules can omit all arguments, in which case all actions are assumed to be 'send' actions
@@ -108,26 +117,34 @@ func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.Left = &SendAction{}
 		} else {
-			return nil, errors.New(
-				"invalid duplicate rule: error parsing first action: %v",
+			return nil, fmt.Errorf(
+				"error parsing first action of duplicate rule: %v",
 				err)
 		}
 	}
 
 	if _, err = s.Expect(","); err != nil {
-		return nil, errors.New("invalid duplicate rule: %v", internal.EOFUnexpected(err))
+		return nil, fmt.Errorf(
+			"unexpected token in duplicate rule: %v",
+			internal.EOFUnexpected(err),
+		)
 	}
 
 	if action.Right, err = ParseAction(s); err != nil {
 		if c, err2 := s.Peek(); err2 == nil && c == ')' {
 			action.Right = &SendAction{}
 		} else {
-			return nil, errors.New("invalid duplicate rule: %v", err)
+			return nil, fmt.Errorf(
+				"error parsing second action of duplicate rule: %v",
+				err)
 		}
 	}
 
 	if _, err = s.Expect(")"); err != nil {
-		return nil, errors.New("invalid duplicate rule: %v", internal.EOFUnexpected(err))
+		return nil, fmt.Errorf(
+			"unexpected token in duplicate rule: %v",
+			internal.EOFUnexpected(err),
+		)
 	}
 
 	return action, nil

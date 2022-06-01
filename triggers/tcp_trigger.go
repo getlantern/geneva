@@ -1,19 +1,18 @@
 package triggers
 
 import (
-	gerrors "errors"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 
-	"github.com/getlantern/errors"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
 
 // ErrUnsupportedOption is returned when an unsupported TCP option is specified in a trigger rule.
-var ErrUnsupportedOption = gerrors.New("unsupported option")
+var ErrUnsupportedOption = errors.New("unsupported option")
 
 // TCPField is the type of a supported TCP field.
 type TCPField int
@@ -80,7 +79,7 @@ func ParseTCPField(field string) (TCPField, error) {
 		}
 	}
 
-	return TCPField(-1), errors.New("unknown TCP field %q", field)
+	return TCPField(-1), fmt.Errorf("unknown TCP field %q", field)
 }
 
 // TCPTrigger is a Trigger that matches on the TCP layer.
@@ -232,7 +231,7 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 
 	tmp, err := strconv.ParseUint(t.value, 0, 32)
 	if err != nil {
-		return false, errors.Wrap(err)
+		return false, fmt.Errorf("match failed: %w", err)
 	}
 
 	v := uint32(tmp)
@@ -266,18 +265,18 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 		return uint32(tcpLayer.Urgent) == v, nil
 	}
 
-	return false, errors.New("TCPTrigger.Matches(%s) is unimplemented", t.Field())
+	return false, fmt.Errorf("TCPTrigger.Matches(%s) is unimplemented", t.Field())
 }
 
 // NewTCPTrigger creates a new TCP trigger.
 func NewTCPTrigger(field, value string, gas int) (*TCPTrigger, error) {
 	if field == "" {
-		return nil, errors.New("cannot create TCP trigger with empty field")
+		return nil, fmt.Errorf("cannot create TCP trigger with empty field")
 	}
 
 	f, err := ParseTCPField(field)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf("failed to create trigger: %w", err)
 	}
 
 	if f == TCPFieldFlags {

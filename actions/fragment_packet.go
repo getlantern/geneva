@@ -2,11 +2,11 @@ package actions
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/getlantern/errors"
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
@@ -69,7 +69,7 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	}
 
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf("failed to fragment: %w", err)
 	}
 
 	if len(packets) == 2 && !a.InOrder {
@@ -77,11 +77,11 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	}
 
 	if lpackets, err = a.FirstFragmentAction.Apply(packets[0]); err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf("failed to apply action to first fragment: %w", err)
 	}
 
 	if rpackets, err = a.SecondFragmentAction.Apply(packets[1]); err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf("failed to apply action to second fragment: %w", err)
 	}
 
 	return append(lpackets, rpackets...), nil
@@ -370,19 +370,19 @@ func (a *FragmentAction) String() string {
 // If the string is malformed, an error will be returned instead.
 func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	if _, err := s.Expect("fragment{"); err != nil {
-		return nil, errors.New("invalid fragment rule at %d: %v", s.Pos(), err)
+		return nil, fmt.Errorf("invalid fragment rule at %d: %w", s.Pos(), err)
 	}
 
 	str, err := s.Until('}')
 	if err != nil {
-		return nil, errors.New("invalid fragment rule at %d: %v", s.Pos(), err)
+		return nil, fmt.Errorf("invalid fragment rule at %d: %w", s.Pos(), err)
 	}
 
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
 	if len(fields) < 3 {
-		return nil, errors.New(
+		return nil, fmt.Errorf(
 			"not enough fields for fragment rule at %d (got %d)",
 			s.Pos(),
 			len(fields),
@@ -399,7 +399,7 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	case "udp":
 		action.proto = layers.LayerTypeUDP
 	default:
-		return nil, errors.New(
+		return nil, fmt.Errorf(
 			"invalid fragment rule: %q is not a recognized protocol",
 			fields[0],
 		)
@@ -407,13 +407,13 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 
 	ofs, err := strconv.ParseInt(fields[1], 10, 16)
 	if err != nil {
-		return nil, errors.New("invalid fragment rule: %q is not a valid offset", fields[1])
+		return nil, fmt.Errorf("invalid fragment rule: %q is not a valid offset", fields[1])
 	}
 
 	action.FragSize = int(ofs)
 
 	if action.InOrder, err = strconv.ParseBool(fields[2]); err != nil {
-		return nil, errors.New(
+		return nil, fmt.Errorf(
 			"invalid fragment rule: %q is not a valid boolean",
 			fields[2],
 		)
@@ -422,7 +422,7 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	if len(fields) == 4 {
 		overlap, err := strconv.ParseInt(fields[3], 10, 16)
 		if err != nil {
-			return nil, errors.New(
+			return nil, fmt.Errorf(
 				"invalid fragment rule: %q is not a valid overlap",
 				fields[3],
 			)
@@ -442,24 +442,30 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.FirstFragmentAction = &SendAction{}
 		} else {
-			return nil, errors.New("error parsing first action of fragment rule: %v", err)
+			return nil, fmt.Errorf("error parsing first action of fragment rule: %w", err)
 		}
 	}
 
 	if _, err = s.Expect(","); err != nil {
-		return nil, errors.New("invalid fragment rule: %v", internal.EOFUnexpected(err))
+		return nil, fmt.Errorf(
+			"unexpected token in fragment rule: %w",
+			internal.EOFUnexpected(err),
+		)
 	}
 
 	if action.SecondFragmentAction, err = ParseAction(s); err != nil {
 		if c, err2 := s.Peek(); err2 == nil && c == ')' {
 			action.SecondFragmentAction = &SendAction{}
 		} else {
-			return nil, errors.New("error parsing second action of fragment rule: %v", err)
+			return nil, fmt.Errorf("error parsing second action of fragment rule: %v", err)
 		}
 	}
 
 	if _, err := s.Expect(")"); err != nil {
-		return nil, errors.New("invalid fragment rule: %v", internal.EOFUnexpected(err))
+		return nil, fmt.Errorf(
+			"unexpected token in fragment rule: %v",
+			internal.EOFUnexpected(err),
+		)
 	}
 
 	return action, nil

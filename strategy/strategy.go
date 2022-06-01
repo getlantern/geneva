@@ -35,12 +35,11 @@
 package strategy
 
 import (
-	gerrors "errors"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
-	"github.com/getlantern/errors"
 	"github.com/getlantern/geneva/actions"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
@@ -115,13 +114,13 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 
 		m, err := at.Matches(pkt)
 		if err != nil {
-			return nil, errors.New("error matching action tree %d: %v", i, err)
+			return nil, fmt.Errorf("error matching action tree %d: %w", i, err)
 		}
 
 		if m {
 			result, err := at.Apply(pkt)
 			if err != nil {
-				return nil, errors.Wrap(err)
+				return nil, fmt.Errorf("failed to apply action tree: %w", err)
 			}
 
 			packets = append(packets, result...)
@@ -153,18 +152,18 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 
 		outbound, err := actions.ParseActionTree(s)
 		if err != nil {
-			if gerrors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) {
 				return st, nil
 			}
 
-			return nil, errors.Wrap(err)
+			return nil, fmt.Errorf("while parsing strategy: %w", err)
 		}
 
 		st.Outbound = append(st.Outbound, outbound)
 
 		s.Chomp()
 
-		if _, err = s.Peek(); gerrors.Is(err, io.EOF) {
+		if _, err = s.Peek(); errors.Is(err, io.EOF) {
 			// there is no inbound strategy, and this strategy didn't end with the \/
 			// delimiter.
 			return st, nil
@@ -174,11 +173,11 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 	s.Chomp()
 
 	if _, err := s.Expect(`\/`); err != nil {
-		if gerrors.Is(err, io.EOF) {
+		if errors.Is(err, io.EOF) {
 			return st, nil
 		}
 		// okay fine, you've already used your free pass above, so now we'll fail hard.
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf("missing \\/ delimiter or invalid strategy: %w", err)
 	}
 
 	s.Chomp()
@@ -186,14 +185,14 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 	for {
 		// before we try to parse the inbound strategy, let's first make sure there's one
 		// there at all.
-		if _, err := s.Peek(); err != nil && gerrors.Is(err, io.EOF) {
+		if _, err := s.Peek(); err != nil && errors.Is(err, io.EOF) {
 			// looks like we don't have an inbound strategy, so we're done!
 			break
 		}
 
 		inbound, err := actions.ParseActionTree(s)
 		if err != nil {
-			return nil, errors.Wrap(err)
+			return nil, fmt.Errorf("while parsing strategy: %w", err)
 		}
 
 		st.Inbound = append(st.Inbound, inbound)

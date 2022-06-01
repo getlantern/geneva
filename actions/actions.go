@@ -6,7 +6,6 @@ package actions
 import (
 	"fmt"
 
-	"github.com/getlantern/errors"
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/getlantern/geneva/triggers"
@@ -36,36 +35,42 @@ func (at *ActionTree) String() string {
 // Matches returns whether this action tree's trigger matches the packet.
 func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
 	r, err := at.Trigger.Matches(packet)
-	return r, errors.Wrap(err)
+	return r, fmt.Errorf("match failed: %w", err)
 }
 
 // Apply applies this action tree to the packet, returning zero or more potentially-modified
 // packets.
 func (at *ActionTree) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 	r, err := at.RootAction.Apply(packet)
-	return r, errors.Wrap(err)
+	return r, fmt.Errorf("apply failed: %w", err)
 }
 
 // ParseActionTree attempts to parse an action tree from its input.
 func ParseActionTree(s *scanner.Scanner) (*ActionTree, error) {
 	trigger, err := triggers.ParseTrigger(s)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf("failed to parse action tree: %w", err)
 	}
 
 	at := &ActionTree{trigger, nil}
 
 	if _, err := s.Expect("-"); err != nil {
-		return nil, errors.Wrap(internal.EOFUnexpected(err))
+		return nil, fmt.Errorf(
+			"unexpected token in action tree: %w",
+			internal.EOFUnexpected(err),
+		)
 	}
 
 	at.RootAction, err = ParseAction(s)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, fmt.Errorf("failed to parse action: %w", err)
 	}
 
 	if _, err := s.Expect("-|"); err != nil {
-		return nil, errors.Wrap(internal.EOFUnexpected(err))
+		return nil, fmt.Errorf(
+			"unexpected token in action tree: %w",
+			internal.EOFUnexpected(err),
+		)
 	}
 
 	return at, nil
@@ -97,7 +102,10 @@ func ParseAction(s *scanner.Scanner) (Action, error) {
 
 	if s.FindToken("drop", true) {
 		if err := s.Advance(4); err != nil {
-			return nil, errors.Wrap(internal.EOFUnexpected(err))
+			return nil, fmt.Errorf(
+				"failed to parse action: %w",
+				internal.EOFUnexpected(err),
+			)
 		}
 
 		return DefaultDropAction, nil
@@ -105,11 +113,14 @@ func ParseAction(s *scanner.Scanner) (Action, error) {
 
 	if s.FindToken("send", true) {
 		if err := s.Advance(4); err != nil {
-			return nil, errors.Wrap(internal.EOFUnexpected(err))
+			return nil, fmt.Errorf(
+				"failed to parse action: %w",
+				internal.EOFUnexpected(err),
+			)
 		}
 
 		return DefaultSendAction, nil
 	}
 
-	return nil, errors.New("invalid action at %d", s.Pos())
+	return nil, fmt.Errorf("invalid action at %d", s.Pos())
 }

@@ -2,10 +2,9 @@
 package scanner
 
 import (
+	"fmt"
 	"io"
 	"unicode"
-
-	"github.com/getlantern/errors"
 )
 
 // Scanner is a token scanner tailored to this library.
@@ -40,7 +39,7 @@ func (l *Scanner) Peek() (rune, error) {
 func (l *Scanner) Pop() (rune, error) {
 	b, err := l.Peek()
 	if err != nil {
-		return 0, errors.Wrap(err)
+		return 0, fmt.Errorf("cannot pop from token stream: %w", err)
 	}
 
 	l.currentPosition++
@@ -59,7 +58,7 @@ func (l *Scanner) Expect(token string) (string, error) {
 
 	for i, c := range token {
 		if l.rest[l.currentPosition+i] != c {
-			return "", errors.New(
+			return "", fmt.Errorf(
 				"expected token %q not found at position %d",
 				token,
 				l.currentPosition,

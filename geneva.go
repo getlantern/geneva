@@ -111,7 +111,8 @@
 package geneva
 
 import (
-	"github.com/getlantern/errors"
+	"fmt"
+
 	"github.com/getlantern/geneva/strategy"
 )
 
@@ -121,5 +122,8 @@ import (
 func NewStrategy(st string) (*strategy.Strategy, error) {
 	s, err := strategy.ParseStrategy(st)
 
-	return s, errors.Wrap(err)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse strategy: %w", err)
+	}
+	return s, nil
 }

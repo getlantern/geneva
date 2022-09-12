@@ -1,4 +1,6 @@
 # geneva, an implementation of Geneva rules for Go
+[![Go Actions Status](https://github.com/getlantern/geneva/actions/workflows/run-tests.yaml/badge.svg)](https://github.com/getlantern/geneva/actions)
+[![Coverage Status](https://coveralls.io/repos/github/getlantern/geneva/badge.svg?branch=main)](https://coveralls.io/github/getlantern/geneva?branch=main)
 
 This is a reimplementation of the client- and server-side rule processing mechanisms of the [Geneva][geneva] project.
 

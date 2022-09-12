@@ -15,7 +15,21 @@ jobs:
         with:
           go-version: 1.18
       - uses: actions/checkout@v3
-      - name: Build
-        run: go build -v ./...
-      - name: Test
-        run: go test -v ./...
+      # Install gotestfmt on the VM running the action.
+      - name: Set up gotestfmt
+        uses: haveyoudebuggedit/gotestfmt-action@v2
+        with:
+          # Optional: pass GITHUB_TOKEN to avoid rate limiting.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Run tests with nice formatting. Save the original log in /tmp/gotest.log
+      - name: Run tests
+        run: make test-and-cover 2>&1 | tee /tmp/gotest.log | grep '"Time"' | gotestfmt
+      - name: Install goveralls
+        env:
+          GO111MODULE: "off"
+        run: go get github.com/mattn/goveralls
+      - name: Send coverage
+        env:
+          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: goveralls -coverprofile=profile.cov -service=github

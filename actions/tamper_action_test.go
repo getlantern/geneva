@@ -34,8 +34,7 @@ func TestParseTamperAction(t *testing.T) {
 				valueGen: &tamperReplaceGen{vUint: 10},
 			},
 			wantErr: false,
-		},
-		{
+		}, {
 			name: "TCP tamper action replace bytes",
 			rule: "tamper{TCP:options-mss:replace:15}",
 			want: &TCPTamperAction{
@@ -50,8 +49,7 @@ func TestParseTamperAction(t *testing.T) {
 				valueGen: &tamperReplaceGen{vBytes: []byte{0x00, 0x0f}},
 			},
 			wantErr: false,
-		},
-		{
+		}, {
 			name: "IPv4 tamper action replace uint",
 			rule: "tamper{IP:ttl:replace:15}",
 			want: &IPv4TamperAction{
@@ -83,7 +81,7 @@ func TestParseTamperAction(t *testing.T) {
 	}
 }
 
-func TestTamperTCPOptions(t *testing.T) {
+func TestTamperTCP(t *testing.T) {
 	type args struct {
 		tcp      *layers.TCP
 		field    TCPField
@@ -97,7 +95,7 @@ func TestTamperTCPOptions(t *testing.T) {
 		{
 			name: "tcp tamper replace existing option",
 			args: args{
-				tcp:      tcpTestPkt(),
+				tcp:      testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
 				field:    TCPOptionMss,
 				valueGen: &tamperReplaceGen{vBytes: []byte{0x0f, 0xff}},
 			},
@@ -106,11 +104,10 @@ func TestTamperTCPOptions(t *testing.T) {
 				0x00, 0x82, 0x9c, 0x00, 0x00, 0x02, 0x04, 0x0f, 0xff, 0x00, 0x00, 0x00, 0x00, 0x54, 0x65,
 				0x73, 0x74,
 			},
-		},
-		{
+		}, {
 			name: "tcp tamper replace missing option",
 			args: args{
-				tcp:      tcpTestPkt(),
+				tcp:      testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
 				field:    TCPOptionAltCkhsum,
 				valueGen: &tamperReplaceGen{vBytes: []byte{0xff, 0xff, 0xff}},
 			},
@@ -119,8 +116,25 @@ func TestTamperTCPOptions(t *testing.T) {
 				0x00, 0x82, 0x9c, 0x00, 0x00, 0x02, 0x04, 0x20, 0x00, 0x0e, 0x05, 0xff, 0xff, 0xff, 0x00,
 				0x00, 0x00, 0x00, 0x54, 0x65, 0x73, 0x74,
 			},
+		}, {
+			name: "tcp tamper replace payload",
+			args: args{
+				tcp:   testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
+				field: TCPLoad,
+				valueGen: &tamperReplaceGen{
+					vBytes: []byte{
+						0x6d, 0x69, 0x73, 0x73, 0x20, 0x79, 0x6f, 0x75, 0x20, 0x46, 0x61, 0x77, 0x6b, 0x73,
+					},
+				},
+			},
+			want: []byte{
+				0x30, 0x39, 0xd4, 0x31, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0x00,
+				0x00, 0x82, 0x9c, 0x00, 0x00, 0x02, 0x04, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6d, 0x69,
+				0x73, 0x73, 0x20, 0x79, 0x6f, 0x75, 0x20, 0x46, 0x61, 0x77, 0x6b, 0x73,
+			},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tamperTCP(tt.args.tcp, tt.args.field, tt.args.valueGen)
@@ -132,7 +146,7 @@ func TestTamperTCPOptions(t *testing.T) {
 	}
 }
 
-func tcpTestPkt() *layers.TCP {
+func testPkt() gopacket.Packet {
 	tcpBytes := []byte{
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x08, 0x00, 0x45, 0x00,
 		0x00, 0x34, 0x00, 0x00, 0x00, 0x00, 0x80, 0x06, 0xb9, 0x70, 0xc0, 0xa8, 0x00, 0x01, 0xc0, 0xa8,
@@ -141,6 +155,5 @@ func tcpTestPkt() *layers.TCP {
 		0x73, 0x74,
 	}
 
-	pkt := gopacket.NewPacket(tcpBytes, layers.LinkTypeEthernet, gopacket.Default)
-	return pkt.Layer(layers.LayerTypeTCP).(*layers.TCP)
+	return gopacket.NewPacket(tcpBytes, layers.LinkTypeEthernet, gopacket.Default)
 }

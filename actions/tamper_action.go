@@ -633,6 +633,8 @@ func checksum(bytes []byte) uint16 {
 	return ^uint16(csum)
 }
 
+// Should we implement tamper for UDP??
+
 //
 // UDP Tamper Action
 //

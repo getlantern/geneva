@@ -7,6 +7,8 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/getlantern/geneva/internal/scanner"
 )
 
@@ -88,21 +90,44 @@ func TestTamperTCPOptions(t *testing.T) {
 		valueGen tamperValueGen
 	}
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
+		name string
+		args args
+		want []byte
 	}{
 		{
-			name:    "",
-			args:    args{},
-			wantErr: false,
+			name: "tcp tamper replace existing option",
+			args: args{
+				tcp:      tcpTestPkt(),
+				field:    TCPOptionMss,
+				valueGen: &tamperReplaceGen{vBytes: []byte{0x0f, 0xff}},
+			},
+			want: []byte{
+				0x30, 0x39, 0xd4, 0x31, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0x00,
+				0x00, 0x82, 0x9c, 0x00, 0x00, 0x02, 0x04, 0x0f, 0xff, 0x00, 0x00, 0x00, 0x00, 0x54, 0x65,
+				0x73, 0x74,
+			},
+		},
+		{
+			name: "tcp tamper replace missing option",
+			args: args{
+				tcp:      tcpTestPkt(),
+				field:    TCPOptionAltCkhsum,
+				valueGen: &tamperReplaceGen{vBytes: []byte{0xff, 0xff, 0xff}},
+			},
+			want: []byte{
+				0x30, 0x39, 0xd4, 0x31, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0x00,
+				0x00, 0x82, 0x9c, 0x00, 0x00, 0x02, 0x04, 0x20, 0x00, 0x0e, 0x05, 0xff, 0xff, 0xff, 0x00,
+				0x00, 0x00, 0x00, 0x54, 0x65, 0x73, 0x74,
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tamperTCP(tt.args.tcp, tt.args.field, tt.args.valueGen); (err != nil) != tt.wantErr {
-				t.Errorf("tamperTCP() error = %v, wantErr %v", err, tt.wantErr)
-			}
+			tamperTCP(tt.args.tcp, tt.args.field, tt.args.valueGen)
+
+			got := append([]byte{}, tt.args.tcp.Contents...)
+			got = append(got, tt.args.tcp.Payload...)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

@@ -223,7 +223,7 @@ var (
 	}
 
 	// tcpOptionLengths is a map of TCP options to the length of their data field.
-	tcpOptionLengths = map[TCPField]uint8{
+	tcpOptionLengths = map[TCPField]int{
 		TCPOptionEol:       0,
 		TCPOptionNop:       0,
 		TCPOptionMss:       2,
@@ -320,7 +320,7 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 }
 
 // tamperTCP modifies the given TCP field using the given value generator.
-func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) error {
+func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) {
 	switch field {
 	case TCPFieldSrcPort:
 		tcp.SrcPort = layers.TCPPort(valueGen.uint(16))
@@ -350,19 +350,22 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) error {
 			}
 		}
 
-		// create option if it doesn't exist
+		// create option if it doesn't exist and move options-eol to the end of the list
 		if opt == nil {
-			opt = &layers.TCPOption{
+			tcp.Options = append(tcp.Options, layers.TCPOption{
 				OptionType: layers.TCPOptionKind(field),
-			}
-			tcp.Options = append(tcp.Options, *opt)
+			})
+
+			ol := len(tcp.Options)
+			tcp.Options[ol-2], tcp.Options[ol-1] = tcp.Options[ol-1], tcp.Options[ol-2]
+			opt = &tcp.Options[ol-2]
 		}
 
-		opt.OptionData = valueGen.bytes(int(tcpOptionLengths[field]))
+		opt.OptionData = valueGen.bytes(tcpOptionLengths[field])
 		if field == TCPOptionEol || field == TCPOptionNop {
 			opt.OptionLength = 1
 		} else {
-			opt.OptionLength = uint8(len(opt.OptionData)) + 2
+			opt.OptionLength = uint8(tcpOptionLengths[field]) + 2
 		}
 
 	}
@@ -374,8 +377,6 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) error {
 	tcp.SerializeTo(sb, gopacket.SerializeOptions{})
 	tcp.Contents = make([]byte, len(sb.Bytes()))
 	copy(tcp.Contents, sb.Bytes())
-
-	return nil
 }
 
 // tcpFlagsToUint32 converts a string of TCP flags to a uint32 bitmap.

@@ -13,6 +13,8 @@ import (
 )
 
 func TestParseTamperAction(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		rule    string
@@ -82,6 +84,8 @@ func TestParseTamperAction(t *testing.T) {
 }
 
 func TestTamperTCP(t *testing.T) {
+	t.Parallel()
+
 	type args struct {
 		tcp      *layers.TCP
 		field    TCPField

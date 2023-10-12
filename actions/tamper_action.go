@@ -2,6 +2,7 @@ package actions
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -12,18 +13,15 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 
+	"github.com/getlantern/geneva/common"
 	"github.com/getlantern/geneva/internal/scanner"
 )
-
-// TODO: implement tamper actions for UDP
 
 const (
 	// TamperReplace replaces the value of a packet field with the given value.
 	TamperReplace = iota
 	// TamperCorrupt replaces the value of a packet field with a randomly-generated value.
 	TamperCorrupt
-	// TamperAdd adds the value to a packet field.
-	TamperAdd
 )
 
 // TamperMode describes the way that the "tamper" action can manipulate a packet.
@@ -36,14 +34,22 @@ func (tm TamperMode) String() string {
 		return "replace"
 	case TamperCorrupt:
 		return "corrupt"
-	case TamperAdd:
-		return "add"
 	}
 
 	return ""
 }
 
-// TamperAction is a Geneva action that modifies packets (typically values in the packet header).
+// TamperAction is a Geneva action that modifies a given field of a packet while always
+// trying to keep the packet valid. This is done by updating the checksums and lengths
+// unless the tamper rule is specifically for the checksum or length. If proto is TCP
+// and the field is an option, the option will be added if it doesn't exist.
+//
+// There are two modes for tampering:
+//
+//	"replace" - replace the field with the given value.
+//	"corrupt" - replace the field with a randomly-generated value of the same bitsize.
+//
+// Currently, only TCP and IPv4 is supported. UDP support is planned for the future.
 type TamperAction struct {
 	// Proto is the protocol layer where the modification will occur.
 	Proto string
@@ -145,7 +151,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	case "TCP":
 		return NewTCPTamperAction(tamperAction)
 	case "UDP":
-		return NewUDPTamperAction(tamperAction)
+		return nil, fmt.Errorf("UDP tamper action not currently supported")
 	default:
 		return nil, fmt.Errorf("invalid tamper rule: %q is not a recognized protocol", proto)
 	}
@@ -155,26 +161,28 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 // TCP Tamper Action
 //
 
+// TCPField is a TCP field that can be modified by a TCPTamperAction.
 type TCPField uint8
 
 const (
 	// supported TCP options. The other options are apparently obsolete and not used.
-	TCPOptionEol       = layers.TCPOptionKindEndList       // len 1
-	TCPOptionNop       = layers.TCPOptionKindNop           // len 1
-	TCPOptionMss       = layers.TCPOptionKindMSS           // len 4
-	TCPOptionWscale    = layers.TCPOptionKindWindowScale   // len 3
-	TCPOptionSackok    = layers.TCPOptionKindSACKPermitted // len 2
-	TCPOptionSack      = layers.TCPOptionKindSACK          // len 2+
-	TCPOptionTimestamp = layers.TCPOptionKindTimestamps    // len 10
+	TCPOptionEol       = layers.TCPOptionKindEndList
+	TCPOptionNop       = layers.TCPOptionKindNop
+	TCPOptionMss       = layers.TCPOptionKindMSS
+	TCPOptionWscale    = layers.TCPOptionKindWindowScale
+	TCPOptionSackok    = layers.TCPOptionKindSACKPermitted
+	TCPOptionSack      = layers.TCPOptionKindSACK
+	TCPOptionTimestamp = layers.TCPOptionKindTimestamps
 
-	// obsolete TCP options geneva uses and is in the strategies.txt file
-	TCPOptionAltCkhsum = 14 // len 3
-	TCPOptionMd5Header = 19 // len 18
-	TCPOptionUto       = 28 // len 4
+	// obsolete TCP options geneva uses and is in the strategies.md document:
+	// https://github.com/Kkevsterrr/geneva/blob/master/strategies.md
+	TCPOptionAltCkhsum = 14
+	TCPOptionMd5Header = 19
+	TCPOptionUto       = 28
 
 	// putting fields after options so that we can use the gopacket.TCPOptionKind constants for options.
 	// this lets us use the same map for both fields and options and also directly compare
-	// tcpTamperAction.field == TCPOption when iterating over tcpPacket.Options
+	// tcpTamperAction.field == TCPOption when iterating over tcpPacket.Options.
 	TCPFieldSrcPort = 9
 	TCPFieldDstPort = 10
 	TCPFieldSeq     = 11
@@ -185,7 +193,7 @@ const (
 	TCPFieldUrgent  = 17
 	TCPLoad         = 18
 
-	// TCP flag string representations for tamper rules
+	// TCP flag string representations for tamper rules.
 	TCPFlagFin = "f"
 	TCPFlagSyn = "s"
 	TCPFlagRst = "r"
@@ -257,6 +265,7 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 	switch ta.Mode {
 	case TamperCorrupt:
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 		return &TCPTamperAction{
 			TamperAction: ta,
 			field:        field,
@@ -264,6 +273,7 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 		}, nil
 	case TamperReplace:
 		gen := &tamperReplaceGen{}
+
 		switch {
 		case field == TCPFieldFlags:
 			gen.vUint = tcpFlagsToUint32(ta.NewValue)
@@ -300,10 +310,11 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 	return nil, fmt.Errorf("invalid tamper rule: %q is not a valid tamper mode for TCP", ta.Mode)
 }
 
+// Apply applies the tamper action to the given packet.
 func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 	tcp := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
 	if tcp == nil {
-		return nil, fmt.Errorf("packet does not have a TCP layer")
+		return nil, errors.New("packet does not have a TCP layer")
 	}
 
 	tamperTCP(tcp, a.field, a.valueGen)
@@ -357,8 +368,7 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) {
 			})
 
 			ol := len(tcp.Options)
-			tcp.Options[ol-2], tcp.Options[ol-1] = tcp.Options[ol-1], tcp.Options[ol-2]
-			opt = &tcp.Options[ol-2]
+			opt = &tcp.Options[ol-1]
 		}
 
 		opt.OptionData = valueGen.bytes(tcpOptionLengths[field])
@@ -367,7 +377,6 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) {
 		} else {
 			opt.OptionLength = uint8(tcpOptionLengths[field]) + 2
 		}
-
 	}
 
 	// let gopacket handle converting the modified TCP headers into []byte for us since we changed the struct fields
@@ -382,33 +391,34 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) {
 // tcpFlagsToUint32 converts a string of TCP flags to a uint32 bitmap.
 func tcpFlagsToUint32(flags string) uint32 {
 	flags = strings.ToLower(flags)
+
 	var f uint32
 	for _, c := range flags {
 		switch c {
-		case 'f':
+		case 'f': // FIN
 			f |= 0x0001
-		case 's':
+		case 's': // SYN
 			f |= 0x0002
-		case 'r':
+		case 'r': // RST
 			f |= 0x0004
-		case 'p':
+		case 'p': // PSH
 			f |= 0x0008
-		case 'a':
+		case 'a': // ACK
 			f |= 0x0010
-		case 'u':
+		case 'u': // URG
 			f |= 0x0020
-		case 'e':
+		case 'e': // ECE
 			f |= 0x0040
-		case 'c':
+		case 'c': // CWR
 			f |= 0x0080
-		case 'n':
+		case 'n': // NS
 			f |= 0x0100
 		}
 	}
 	return f
 }
 
-// setTCPFlags sets the tcp struct fields using flags as a bitmap, does not modify the raw packet bytes.
+// setTCPFlags sets the tcp struct fields using flags bitmap, does not modify the raw packet bytes.
 func setTCPFlags(tcp *layers.TCP, flags uint16) {
 	tcp.FIN = flags&0x0001 != 0
 	tcp.SYN = flags&0x0002 != 0
@@ -421,7 +431,8 @@ func setTCPFlags(tcp *layers.TCP, flags uint16) {
 	tcp.NS = flags&0x0100 != 0
 }
 
-// updateTCPDataOffAndChksum updates the TCP data offset and checksum fields on the TCP struct and in the raw packet bytes.
+// updateTCPDataOffAndChksum updates the TCP data offset and checksum fields on the TCP struct
+// and in the raw packet bytes.
 func updateTCPDataOffAndChksum(tcp *layers.TCP) {
 	// update data offset
 	headerLen := len(tcp.Contents)
@@ -429,22 +440,18 @@ func updateTCPDataOffAndChksum(tcp *layers.TCP) {
 	tcp.Contents[12] = tcp.DataOffset << 4
 
 	// update checksum.
-	// the ComputeChecksum method requires the checksum bytes in the raw packet to be zeroed out.
-	tcp.Contents[16] = 0
-	tcp.Contents[17] = 0
-	chksum, _ := tcp.ComputeChecksum()
-	tcp.Checksum = chksum
-	binary.BigEndian.PutUint16(tcp.Contents[16:18], chksum)
+	common.UpdateTCPChecksum(tcp)
 }
 
 //
 // IPv4 Tamper Action
 //
 
+// IPv4Field is an IPv4 field that can be modified by an IPv4TamperAction.
 type IPv4Field uint8
 
 const (
-	// ip field constants
+	// supported IPv4 fields
 	IPv4FieldSrcIP = iota
 	IPv4FieldDstIP
 	IPv4FieldVersion
@@ -460,27 +467,25 @@ const (
 	IPv4Load
 )
 
-var (
-	ipv4Fields = map[string]IPv4Field{
-		"srcip":  IPv4FieldSrcIP,
-		"dstip":  IPv4FieldDstIP,
-		"verion": IPv4FieldVersion,
-		"ihl":    IPv4FieldIHL,
-		"tos":    IPv4FieldTOS,
-		"length": IPv4FieldLength,
-		"id":     IPv4FieldID,
-		//
-		// I don't know what the flags will look like in a tamper rule
-		// shouldn't be a problem since there isn't any tamper rules for flags currently
-		// "flags":      IPv4FieldFlags,
-		//
-		"fragoffset": IPv4FieldFragOffset,
-		"ttl":        IPv4FieldTTL,
-		"protocol":   IPv4FieldProtocol,
-		"checksum":   IPv4FieldChecksum,
-		"load":       IPv4Load,
-	}
-)
+var ipv4Fields = map[string]IPv4Field{
+	"srcip":  IPv4FieldSrcIP,
+	"dstip":  IPv4FieldDstIP,
+	"verion": IPv4FieldVersion,
+	"ihl":    IPv4FieldIHL,
+	"tos":    IPv4FieldTOS,
+	"length": IPv4FieldLength,
+	"id":     IPv4FieldID,
+	//
+	// I don't know what the flags will look like in a tamper rule
+	// shouldn't be a problem since there isn't any tamper rules for IP flags currently
+	// "flags":      IPv4FieldFlags,
+	//
+	"fragoffset": IPv4FieldFragOffset,
+	"ttl":        IPv4FieldTTL,
+	"protocol":   IPv4FieldProtocol,
+	"checksum":   IPv4FieldChecksum,
+	"load":       IPv4Load,
+}
 
 // IPv4TamperAction is a Geneva action that modifies IPv4 packets.
 type IPv4TamperAction struct {
@@ -502,6 +507,7 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 	switch ta.Mode {
 	case TamperCorrupt:
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 		return &IPv4TamperAction{
 			TamperAction: ta,
 			field:        field,
@@ -509,6 +515,7 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 		}, nil
 	case TamperReplace:
 		gen := &tamperReplaceGen{}
+
 		switch field {
 		case IPv4FieldSrcIP, IPv4FieldDstIP:
 			// parse IP address from NewValue and convert to []byte
@@ -544,6 +551,7 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 	return nil, fmt.Errorf("invalid tamper rule: %q is not a valid tamper mode for IPv4", ta.Mode)
 }
 
+// Apply applies the tamper action to the given packet.
 func (a *IPv4TamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 	ip := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	if ip == nil {
@@ -551,6 +559,7 @@ func (a *IPv4TamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, err
 	}
 
 	tamperIPv4(ip, a.field, a.valueGen)
+	common.UpdateIPv4Checksum(ip)
 
 	return a.Action.Apply(packet)
 }
@@ -591,95 +600,22 @@ func tamperIPv4(ip *layers.IPv4, field IPv4Field, valueGen tamperValueGen) error
 	ip.Contents = make([]byte, len(sb.Bytes()))
 	copy(ip.Contents, sb.Bytes())
 
-	// do we update length and checksum???
-	// it doesn't look like the geneva team does when they tamper with the IP layer
-
 	return nil
 }
 
+// updateIPv4LengthAndChksum updates the IPv4 length
 func updateIPv4LengthAndChksum(ip *layers.IPv4) {
 	length := len(ip.Contents) + len(ip.Payload)
 	ip.Length = uint16(length)
 	binary.BigEndian.PutUint16(ip.Contents[2:4], ip.Length)
-	buf := make([]byte, length)
-	copy(buf, ip.Contents)
-	copy(buf[len(ip.Contents):], ip.Payload)
-	chksum := checksum(buf)
-	ip.Checksum = chksum
-	binary.BigEndian.PutUint16(ip.Contents[10:12], chksum)
 }
-
-// copied directly from gopacket/layers/ip4.go because they didn't export one. for whatever some reason..
-func checksum(bytes []byte) uint16 {
-	// Clear checksum bytes
-	bytes[10] = 0
-	bytes[11] = 0
-
-	// Compute checksum
-	var csum uint32
-	for i := 0; i < len(bytes); i += 2 {
-		csum += uint32(bytes[i]) << 8
-		csum += uint32(bytes[i+1])
-	}
-	for {
-		// Break when sum is less or equals to 0xFFFF
-		if csum <= 65535 {
-			break
-		}
-		// Add carry to the sum
-		csum = (csum >> 16) + uint32(uint16(csum))
-	}
-	// Flip all the bits
-	return ^uint16(csum)
-}
-
-// Should we implement tamper for UDP??
 
 //
 // UDP Tamper Action
+// TODO: implement UDP tamper actions
 //
 
-type UDPField uint8
-
-const (
-// udp field constants
-)
-
-var (
-	udpFields = map[string]UDPField{}
-)
-
-// UDPTamperAction is a Geneva action that modifies UDP packets.
-type UDPTamperAction struct {
-	// TamperAction is the underlying action parsed from the tamper rule.
-	TamperAction
-	// field is the UDP field to modify.
-	field UDPField
-	// valueGen is the value generator to use when modifying the field.
-	valueGen tamperValueGen
-}
-
-// NewUDPTamperAction returns a new UDPTamperAction from the given TamperAction.
-func NewUDPTamperAction(ta TamperAction) (*UDPTamperAction, error) {
-	return nil, fmt.Errorf("UDP tamper action unimplemented")
-}
-
-func (a *UDPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
-	udp := packet.Layer(layers.LayerTypeUDP).(*layers.UDP)
-	if udp == nil {
-		return nil, fmt.Errorf("packet does not have a UDP layer")
-	}
-
-	tamperUDP(udp, a.field, a.valueGen)
-
-	return a.Action.Apply(packet)
-}
-
-// tamperUDP modifies the given UDP field using the given value generator.
-func tamperUDP(tcp *layers.UDP, field UDPField, valueGen tamperValueGen) error {
-	return fmt.Errorf("tamper UDP not implemented")
-}
-
+// tamperValueGen is a value generator for tamper actions.
 type tamperValueGen interface {
 	uint(bitSize int) uint32
 	bytes(n int) []byte
@@ -692,10 +628,12 @@ type tamperReplaceGen struct {
 	vBytes []byte
 }
 
-func (g *tamperReplaceGen) uint(bitSize int) uint32 {
+// uint returns the uint value. bitSize is ignored.
+func (g *tamperReplaceGen) uint(_ int) uint32 {
 	return g.vUint
 }
 
+// bytes returns the byte slice or an empty byte slice if n == 0.
 func (g *tamperReplaceGen) bytes(n int) []byte {
 	if n == 0 {
 		return []byte{}
@@ -708,6 +646,7 @@ type tamperCorruptGen struct {
 	r *rand.Rand
 }
 
+// uint returns a random value of the given bit size as a uint32.
 func (g *tamperCorruptGen) uint(bitSize int) uint32 {
 	n := g.r.Intn(1<<bitSize - 1)
 	return uint32(n)
@@ -719,6 +658,7 @@ func (g *tamperCorruptGen) bytes(n int) []byte {
 	if n > 20 {
 		n = g.r.Intn(n)
 	}
+
 	b := make([]byte, n)
 	g.r.Read(b)
 	return b

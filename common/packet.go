@@ -25,28 +25,27 @@ func UpdateTCPChecksum(tcp *layers.TCP) error {
 
 // UpdateIPv4Checksum updates the IPv4 checksum field and the raw bytes for a gopacket IPv4 layer.
 func UpdateIPv4Checksum(ip *layers.IPv4) error {
-	buf := make([]byte, ip.Length)
-	copy(buf, ip.Contents)
-	copy(buf[len(ip.Contents):], ip.Payload)
-
-	chksum := CalculateIPv4Checksum(buf)
+	chksum := CalculateIPv4Checksum(ip.Contents)
 	ip.Checksum = chksum
 	binary.BigEndian.PutUint16(ip.Contents[10:12], chksum)
 
 	return nil
 }
 
-// copied directly from gopacket/layers/ip4.go because they didn't export one. for whatever some reason..
+// copied from gopacket/layers/ip4.go because they didn't export one. for whatever some reason..
 func CalculateIPv4Checksum(bytes []byte) uint16 {
+	buf := make([]byte, len(bytes))
+	copy(buf, bytes)
+
 	// Clear checksum bytes
-	bytes[10] = 0
-	bytes[11] = 0
+	buf[10] = 0
+	buf[11] = 0
 
 	// Compute checksum
 	var csum uint32
-	for i := 0; i < len(bytes); i += 2 {
-		csum += uint32(bytes[i]) << 8
-		csum += uint32(bytes[i+1])
+	for i := 0; i < len(buf); i += 2 {
+		csum += uint32(buf[i]) << 8
+		csum += uint32(buf[i+1])
 	}
 
 	for csum > 0xFFFF {

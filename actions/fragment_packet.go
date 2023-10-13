@@ -261,11 +261,11 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 }
 
 func updateChecksums(packet gopacket.Packet) {
-	if ipv4 := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ipv4 != nil {
+	if ipv4, _ := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ipv4 != nil {
 		common.UpdateIPv4Checksum(ipv4)
 	}
 
-	if tcp := packet.Layer(layers.LayerTypeTCP).(*layers.TCP); tcp != nil {
+	if tcp, _ := packet.Layer(layers.LayerTypeTCP).(*layers.TCP); tcp != nil {
 		common.UpdateTCPChecksum(tcp)
 	}
 }
@@ -375,6 +375,10 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 	}
 
 	if action.FirstFragmentAction, err = ParseAction(s); err != nil {
+		if !errors.Is(err, ErrInvalidAction) {
+			return nil, err
+		}
+
 		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.FirstFragmentAction = &SendAction{}
 		} else {

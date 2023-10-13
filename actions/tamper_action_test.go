@@ -1,3 +1,4 @@
+//nolint:depguard,testpackage
 package actions
 
 import (
@@ -93,6 +94,7 @@ func TestTamperTCP(t *testing.T) {
 		field    TCPField
 		valueGen tamperValueGen
 	}
+
 	tests := []struct {
 		name string
 		args args

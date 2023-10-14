@@ -1,4 +1,6 @@
-//nolint:godox
+// Package scanner is a token scanner tailored to this library.
+//
+// BUG(sw) this could probably be almost completely replaced with stdlib's text/scanner.
 package scanner
 
 import (
@@ -7,9 +9,7 @@ import (
 	"unicode"
 )
 
-// Scanner is a token scanner tailored to this library.
-//
-// BUG(sw) this could probably be almost completely replaced with stdlib's text/scanner.
+// Scanner is a token scanner.
 type Scanner struct {
 	rest            []rune
 	currentPosition int
@@ -20,6 +20,7 @@ func NewScanner(source string) *Scanner {
 	return &Scanner{[]rune(source), 0}
 }
 
+// Pos returns the current position of the scanner.
 func (l *Scanner) Pos() int {
 	return l.currentPosition
 }

@@ -123,14 +123,14 @@ func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 			action.Left = &SendAction{}
 		} else {
 			return nil, fmt.Errorf(
-				"error parsing first action of duplicate rule: %v",
+				"error parsing first action of duplicate rule: %w",
 				err)
 		}
 	}
 
 	if _, err = s.Expect(","); err != nil {
 		return nil, fmt.Errorf(
-			"unexpected token in duplicate rule: %v",
+			"unexpected token in duplicate rule: %w",
 			internal.EOFUnexpected(err),
 		)
 	}
@@ -140,14 +140,14 @@ func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 			action.Right = &SendAction{}
 		} else {
 			return nil, fmt.Errorf(
-				"error parsing second action of duplicate rule: %v",
+				"error parsing second action of duplicate rule: %w",
 				err)
 		}
 	}
 
 	if _, err = s.Expect(")"); err != nil {
 		return nil, fmt.Errorf(
-			"unexpected token in duplicate rule: %v",
+			"unexpected token in duplicate rule: %w",
 			internal.EOFUnexpected(err),
 		)
 	}

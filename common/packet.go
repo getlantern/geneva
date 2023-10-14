@@ -1,3 +1,4 @@
+// Package common provides common functions for Geneva.
 package common
 
 import (
@@ -28,7 +29,7 @@ func UpdateIPv4Checksum(ip *layers.IPv4) {
 // CalculateIPv4Checksum calculates the IPv4 checksum for the given bytes.
 // copied from gopacket/layers/ip4.go because they didn't export one. for whatever some reason..
 func CalculateIPv4Checksum(bytes []byte) uint16 {
-	buf := make([]byte, len(bytes))
+	buf := make([]byte, len(bytes), 60)
 	copy(buf, bytes)
 
 	// Clear checksum bytes

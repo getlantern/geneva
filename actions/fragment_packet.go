@@ -65,7 +65,6 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	case layers.LayerTypeTCP:
 		packets, err = fragmentTCPSegment(packet, a.FragSize)
 	default:
-		// nolint: godox
 		// TODO: should we log this?
 		packets, err = duplicate(packet)
 	}
@@ -232,7 +231,7 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 	buf = buf[:uint16(ofs)+hdrLen+offset]
 
 	first := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
-	if ipv4 := first.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ipv4 != nil {
+	if ipv4, ok := first.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ok && ipv4 != nil {
 		common.UpdateIPv4Checksum(ipv4)
 	}
 
@@ -253,7 +252,7 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 	binary.BigEndian.PutUint16(ipv4Buf[6:], flagsAndFrags)
 
 	second := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
-	if ipv4 := second.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ipv4 != nil {
+	if ipv4, _ := second.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ipv4 != nil {
 		common.UpdateIPv4Checksum(ipv4)
 	}
 
@@ -397,13 +396,13 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 		if c, err2 := s.Peek(); err2 == nil && c == ')' {
 			action.SecondFragmentAction = &SendAction{}
 		} else {
-			return nil, fmt.Errorf("error parsing second action of fragment rule: %v", err)
+			return nil, fmt.Errorf("error parsing second action of fragment rule: %w", err)
 		}
 	}
 
 	if _, err := s.Expect(")"); err != nil {
 		return nil, fmt.Errorf(
-			"unexpected token in fragment rule: %v",
+			"unexpected token in fragment rule: %w",
 			internal.EOFUnexpected(err),
 		)
 	}

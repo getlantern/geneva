@@ -1,3 +1,4 @@
+// Package internal provides internal Geneva types and functions.
 package internal
 
 import (

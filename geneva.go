@@ -10,7 +10,7 @@
 // This package aims to implement the same triggers and actions that the Geneva project's canonical
 // Python package does.
 //
-// Quick Background
+// # Quick Background
 //
 // Geneva rules are called "strategies". A strategy consists of zero or more "action trees" that can
 // be applied to inbound or outbound packets. The actions trees define both a "trigger" and a tree
@@ -18,11 +18,11 @@
 // or more packets that should replace the original packet, which then can be reinjected into the
 // host OS' network stack.
 //
-// Strategies, Forests, and Action Trees
+// # Strategies, Forests, and Action Trees
 //
 // Let's work from the top down. A strategy, conceptually, looks like this:
 //
-//  outbound-forest \/ inbound-forest
+//	outbound-forest \/ inbound-forest
 //
 // "outbound-forest" and "inbound-forest" are ordered lists of (trigger, action tree) pairs. The
 // Geneva paper calls these ordered lists "forests". The outbound and inbound forests are separated
@@ -39,11 +39,11 @@
 // A real example, taken from https://geneva.cs.umd.edu/papers/geneva_ccs19.pdf (pg 2202), would
 // look like this:
 //
-//  [TCP:flags:S]-
-//      duplicate(
-//        tamper{TCP:flags:replace:SA}(send),
-//        send)-| \/
-//  [TCP:flags:R]-drop-|
+//	[TCP:flags:S]-
+//	    duplicate(
+//	      tamper{TCP:flags:replace:SA}(send),
+//	      send)-| \/
+//	[TCP:flags:R]-drop-|
 //
 // In this example, the outbound forest would trigger on TCP packets that have just the SYN flag set,
 // and would perform a few different actions on those packets. The inbound forest would only apply
@@ -52,7 +52,7 @@
 //
 // In a forest, each action tree must adhere to the syntax "[trigger]-action-|".
 //
-// Triggers
+// # Triggers
 //
 // A trigger defines a way to match packets so that an action tree can be applied to them. In the
 // example above, the first trigger is "[TCP:flags:S]". This is a trigger that matches on the TCP
@@ -60,29 +60,29 @@
 // will not fire for packets that have, i.e., both SYN and ACK set.) If the packet is not a TCP
 // packet, or the flags do not match exactly, then this trigger will not fire.
 //
-// Actions
+// # Actions
 //
 // An action simply encodes steps to manipulate a packet. There are a number of actions described in
 // the Geneva paper:
 //
-//  send
+//	send
 //
 // The "send" action simply yields the given packet. (A quirk—or what the paper deems to be
 // canonical syntax—is to elide any "send" actions in the action tree. For instance, the action
 // "duplicate(,)" is equivalent to "duplicate(send,send)". Bear this in mind when reading Geneva
 // strategies!)
 //
-//  drop
+//	drop
 //
 // The "drop" action discards the given packet.
 //
-//  duplicate(a1, a2)
+//	duplicate(a1, a2)
 //
 // The "duplicate" action copies the original packet, then applies action a1 to the original and a2
 // to the copy. For example, if a1 and a2 are both "send" actions, then the action will yield two
 // packets identical to the first.
 //
-//  fragment{protocol:offset:inOrder}(a1, a2)
+//	fragment{protocol:offset:inOrder}(a1, a2)
 //
 // The "fragment" action takes the original packet and fragments it, applying a1 to one of the
 // fragments and a2 to the other. Since both the IP and TCP layers support fragmentation, the rule
@@ -94,7 +94,7 @@
 // that the fragments be returned out-of-order; i.e., reversed, by specifying "False" for the
 // "inOrder" argument.)
 //
-//  tamper{protocol:field:mode[:newValue]}(a1)
+//	tamper{protocol:field:mode[:newValue]}(a1)
 //
 // The "tamper" action takes the original packet and modifies it in some fashion, depending on the
 // protocol, field, and mode given. There are two modes: replace and corrupt. The "replace" mode
@@ -121,9 +121,9 @@ import (
 // This is a convenience wrapper for strategy.ParseStrategy().
 func NewStrategy(st string) (*strategy.Strategy, error) {
 	s, err := strategy.ParseStrategy(st)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse strategy: %w", err)
 	}
+
 	return s, nil
 }

@@ -1,6 +1,3 @@
-// Package actions describes the actions that can be applied to a given packet.
-//
-//nolint:depguard,dupword
 package actions
 
 import (
@@ -17,6 +14,7 @@ import (
 	"github.com/google/gopacket/layers"
 
 	"github.com/getlantern/geneva/common"
+	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 )
 
@@ -27,7 +25,6 @@ const (
 	TamperCorrupt
 )
 
-//nolint:revive
 var (
 	ErrInvalidTamperMode = errors.New("invalid tamper mode")
 	ErrInvalidTamperRule = errors.New("invalid tamper rule")
@@ -88,6 +85,8 @@ func (a *TamperAction) String() string {
 // ParseTamperAction parses a string representation of a "tamper" action.
 //
 // If the string is malformed, an error will be returned instead.
+//
+//nolint:errorlint
 func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	if _, err := s.Expect("tamper{"); err != nil {
 		return nil, fmt.Errorf("%s: %w", ErrInvalidTamperRule, err)
@@ -158,7 +157,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 	}
 
 	if _, err = s.Expect(")"); err != nil {
-		return nil, fmt.Errorf("%s: unexpected token: %w", ErrInvalidTamperRule, err)
+		return nil, fmt.Errorf("%s: unexpected token: %w", ErrInvalidTamperRule, internal.EOFUnexpected(err))
 	}
 
 	return newTamperAction(tamperAction)
@@ -184,7 +183,6 @@ func newTamperAction(ta TamperAction) (Action, error) {
 // TCPField is a TCP field that can be modified by a TCPTamperAction.
 type TCPField uint8
 
-//nolint:revive
 const (
 	// supported TCP options. The other options are apparently obsolete and not used.
 	TCPOptionEol       = layers.TCPOptionKindEndList
@@ -287,7 +285,7 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 
 	switch ta.Mode {
 	case TamperCorrupt:
-		r := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 		return &TCPTamperAction{
 			TamperAction: ta,
@@ -340,9 +338,9 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 
 // Apply applies the tamper action to the given packet.
 func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
-	tcp := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
+	tcp, _ := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
 	if tcp == nil {
-		return nil, errors.New("packet does not have a TCP layer") //nolint:goerr113
+		return nil, errors.New("packet does not have a TCP layer")
 	}
 
 	tamperTCP(tcp, a.field, a.valueGen)
@@ -351,12 +349,12 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 	if strings.HasPrefix(a.Field, "options") {
 		updateTCPDataOffAndChksum(tcp)
 
-		if ip := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ip != nil {
-			updateIPv4LengthAndChksum(ip)
+		if ip, _ := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ip != nil {
+			updateIPv4Length(ip)
 		}
 	}
 
-	return a.Action.Apply(packet) //nolint:wrapcheck
+	return a.Action.Apply(packet)
 }
 
 // tamperTCP modifies the given TCP field using the given value generator.
@@ -415,7 +413,7 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) {
 	// instead of the underlying []byte directly. SerializeTo doesn't write the changes to the raw packet
 	// so we have to copy the formatted bytes back into the packet header.
 	sb := gopacket.NewSerializeBuffer()
-	tcp.SerializeTo(sb, gopacket.SerializeOptions{}) //nolint:errcheck,gosec
+	tcp.SerializeTo(sb, gopacket.SerializeOptions{})
 	tcp.Contents = make([]byte, len(sb.Bytes()))
 	copy(tcp.Contents, sb.Bytes())
 }
@@ -483,7 +481,6 @@ func updateTCPDataOffAndChksum(tcp *layers.TCP) {
 // IPv4Field is an IPv4 field that can be modified by an IPv4TamperAction.
 type IPv4Field uint8
 
-//nolint:revive
 const (
 	// supported IPv4 fields.
 	IPv4FieldSrcIP = iota
@@ -540,7 +537,7 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 
 	switch ta.Mode {
 	case TamperCorrupt:
-		r := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 		return &IPv4TamperAction{
 			TamperAction: ta,
@@ -587,15 +584,15 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 
 // Apply applies the tamper action to the given packet.
 func (a *IPv4TamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
-	ip := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
+	ip, _ := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	if ip == nil {
-		return nil, errors.New("packet does not have a IPv4 layer") //nolint:goerr113
+		return nil, errors.New("packet does not have a IPv4 layer")
 	}
 
 	tamperIPv4(ip, a.field, a.valueGen)
 	common.UpdateIPv4Checksum(ip)
 
-	return a.Action.Apply(packet) //nolint:wrapcheck
+	return a.Action.Apply(packet)
 }
 
 // tamperIPv4 modifies the given IP field using the given value generator.
@@ -630,13 +627,13 @@ func tamperIPv4(ip *layers.IPv4, field IPv4Field, valueGen tamperValueGen) {
 	// let gopacket handle converting modified packet into []byte again, it's just easier
 	// again copy the bytes back into the packet header
 	sb := gopacket.NewSerializeBuffer()
-	ip.SerializeTo(sb, gopacket.SerializeOptions{}) //nolint:errcheck,gosec
+	ip.SerializeTo(sb, gopacket.SerializeOptions{})
 	ip.Contents = make([]byte, len(sb.Bytes()))
 	copy(ip.Contents, sb.Bytes())
 }
 
-// updateIPv4LengthAndChksum updates the IPv4 length.
-func updateIPv4LengthAndChksum(ip *layers.IPv4) {
+// updateIPv4Length updates the IPv4 length.
+func updateIPv4Length(ip *layers.IPv4) {
 	length := len(ip.Contents) + len(ip.Payload)
 	ip.Length = uint16(length)
 	binary.BigEndian.PutUint16(ip.Contents[2:4], ip.Length)
@@ -682,8 +679,6 @@ func (g *tamperCorruptGen) uint(bitSize int) uint32 {
 
 // bytes returns a random byte slice of length n if n <= 20, otherwise it returns a
 // a random byte slice of random length up to n.
-//
-//nolint:gosec
 func (g *tamperCorruptGen) bytes(n int) []byte {
 	if n > 20 {
 		n = g.r.Intn(n)

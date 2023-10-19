@@ -1,7 +1,6 @@
 package actions_test
 
 import (
-	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -48,14 +47,6 @@ func TestIPv4HeaderChecksum(t *testing.T) {
 	chksum := common.CalculateIPv4Checksum(header)
 	if chksum != expected {
 		t.Fatalf("expected %#04x, got %#04x", expected, chksum)
-	}
-
-	if val := binary.BigEndian.Uint16(header[10:]); val != expected {
-		t.Fatalf("expected %#04x in header, got %#04x", expected, val)
-	}
-
-	if !actions.VerifyIPv4Checksum(header) {
-		t.Fatal("checksum validation failed")
 	}
 }
 

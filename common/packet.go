@@ -29,18 +29,15 @@ func UpdateIPv4Checksum(ip *layers.IPv4) {
 // CalculateIPv4Checksum calculates the IPv4 checksum for the given bytes.
 // copied from gopacket/layers/ip4.go because they didn't export one. for whatever some reason..
 func CalculateIPv4Checksum(bytes []byte) uint16 {
-	buf := make([]byte, len(bytes), 60)
-	copy(buf, bytes)
-
 	// Clear checksum bytes
-	buf[10] = 0
-	buf[11] = 0
+	bytes[10] = 0
+	bytes[11] = 0
 
 	// Compute checksum
 	var csum uint32
-	for i := 0; i < len(buf); i += 2 {
-		csum += uint32(buf[i]) << 8
-		csum += uint32(buf[i+1])
+	for i := 0; i < len(bytes); i += 2 {
+		csum += uint32(bytes[i]) << 8
+		csum += uint32(bytes[i+1])
 	}
 
 	for csum > 0xFFFF {

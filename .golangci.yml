@@ -19,6 +19,10 @@ linters:
     - ireturn
     - nolintlint
     - varnamelen
+    - depguard
+    - dupword
+    - testpackage
+    - godox
 
 linters-settings:
   misspell:
@@ -28,6 +32,23 @@ linters-settings:
     block-size: 2
   exhaustive:
     default-signifies-exhaustive: true
+  gosec:
+    excludes:
+      - G104 # Duplicated errcheck checks
+      - G404 # Use of math/rand for RNG
+  wrapcheck:
+    ignoreSigs:
+      - .Errorf(
+      - errors.New(
+      - errors.Unwrap(
+      - .Apply(
+  revive:
+    rules:
+      - name: unused-parameter
+        severity: warning
+        disabled: true
+        arguments:
+          - allowRegex: "^_"
 
 issues:
   exclude-rules:
@@ -35,3 +56,10 @@ issues:
     - linters:
       - paralleltest
       text: "does not use range value in test Run"
+    - linters:
+      - errcheck
+      text: "Error return value of .(tcp|ip|udp).SerializeTo. is not checked"
+  exclude:
+    # these should be self-documenting
+    - "exported const ((TCP|IPv4)(Field|Flag|Option).*|IPFieldVersion) should (have comment|be of the form)"
+    - "do not define dynamic errors, use wrapped static errors instead:"

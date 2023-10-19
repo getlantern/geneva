@@ -4,16 +4,20 @@
 package actions
 
 import (
+	"errors"
 	"fmt"
+
+	"github.com/google/gopacket"
 
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/getlantern/geneva/triggers"
-	"github.com/google/gopacket"
 
 	// gopacket best practice says import this, too.
 	_ "github.com/google/gopacket/layers"
 )
+
+var ErrInvalidAction = errors.New("invalid action")
 
 // ActionTree represents a Geneva (trigger, action) pair.
 //
@@ -122,5 +126,5 @@ func ParseAction(s *scanner.Scanner) (Action, error) {
 		return DefaultSendAction, nil
 	}
 
-	return nil, fmt.Errorf("invalid action at %d", s.Pos())
+	return nil, fmt.Errorf("%w at %d", ErrInvalidAction, s.Pos())
 }

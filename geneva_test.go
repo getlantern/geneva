@@ -36,10 +36,10 @@ var examples = []string{
 func TestNewStrategy(t *testing.T) {
 	t.Parallel()
 
-	for _, s := range examples {
+	for i, s := range examples {
 		_, err := geneva.NewStrategy(s)
 		if err != nil {
-			t.Errorf("failed to parse strategy: %v", err)
+			t.Errorf("failed to parse strategy %d %q: %v", i, s, err)
 		}
 	}
 }

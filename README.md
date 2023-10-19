@@ -103,6 +103,13 @@ that "branching actions are not supported on inbound trees". Practically, this m
 actions can only be applied to outbound packets, while the sleep, drop, and tamper actions can apply to packets of
 either direction. (Note that this package does not currently enforce this; this is also a bug.)
 
+## Disclaimer
+
+Currently only IPv4 and TCP are supported. There are plans to add support for UDP in the future (although pull requests
+are welcome! Look at `TCPTamperAction` and `IPv4TamperAction` in `actions/tamper_action.go` as examples.
+`UDPTamperAction` must implement the `actions.Action` interface). There are no plans at the moment to add support 
+for IPv6.
+
 ## Credits
 
 See https://censorship.ai for more information about Geneva itself.

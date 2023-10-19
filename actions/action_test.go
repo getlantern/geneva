@@ -1,14 +1,15 @@
 package actions_test
 
 import (
-	"encoding/binary"
 	"fmt"
 	"testing"
 
-	"github.com/getlantern/geneva/actions"
-	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+
+	"github.com/getlantern/geneva/actions"
+	"github.com/getlantern/geneva/common"
+	"github.com/getlantern/geneva/internal/scanner"
 )
 
 var (
@@ -43,17 +44,9 @@ func TestIPv4HeaderChecksum(t *testing.T) {
 	}
 	expected := uint16(0xb861)
 
-	chksum := actions.ComputeIPv4Checksum(header)
+	chksum := common.CalculateIPv4Checksum(header)
 	if chksum != expected {
 		t.Fatalf("expected %#04x, got %#04x", expected, chksum)
-	}
-
-	if val := binary.BigEndian.Uint16(header[10:]); val != expected {
-		t.Fatalf("expected %#04x in header, got %#04x", expected, val)
-	}
-
-	if !actions.VerifyIPv4Checksum(header) {
-		t.Fatal("checksum validation failed")
 	}
 }
 

@@ -4,9 +4,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/gopacket"
+
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
-	"github.com/google/gopacket"
 )
 
 // DuplicateAction is a Geneva action that duplicates a packet and applies separate action trees to
@@ -114,18 +115,22 @@ func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 	}
 
 	if action.Left, err = ParseAction(s); err != nil {
+		if !errors.Is(err, ErrInvalidAction) {
+			return nil, err
+		}
+
 		if c, err2 := s.Peek(); err2 == nil && c == ',' {
 			action.Left = &SendAction{}
 		} else {
 			return nil, fmt.Errorf(
-				"error parsing first action of duplicate rule: %v",
+				"error parsing first action of duplicate rule: %w",
 				err)
 		}
 	}
 
 	if _, err = s.Expect(","); err != nil {
 		return nil, fmt.Errorf(
-			"unexpected token in duplicate rule: %v",
+			"unexpected token in duplicate rule: %w",
 			internal.EOFUnexpected(err),
 		)
 	}
@@ -135,14 +140,14 @@ func ParseDuplicateAction(s *scanner.Scanner) (Action, error) {
 			action.Right = &SendAction{}
 		} else {
 			return nil, fmt.Errorf(
-				"error parsing second action of duplicate rule: %v",
+				"error parsing second action of duplicate rule: %w",
 				err)
 		}
 	}
 
 	if _, err = s.Expect(")"); err != nil {
 		return nil, fmt.Errorf(
-			"unexpected token in duplicate rule: %v",
+			"unexpected token in duplicate rule: %w",
 			internal.EOFUnexpected(err),
 		)
 	}

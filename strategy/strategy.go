@@ -4,8 +4,7 @@
 // outbound packets. The actions trees encode what actions to take on a packet. A strategy,
 // conceptually, looks like this:
 //
-//
-//   outbound-forest \/ inbound-forest
+//	outbound-forest \/ inbound-forest
 //
 // "outbound-forest" and "inbound-forest" are ordered lists of "(trigger, action tree)" pairs. The
 // Geneva paper calls these ordered lists "forests". The outbound and inbound forests are separated
@@ -21,12 +20,12 @@
 //
 // A real example, taken from the [original paper][geneva-paper] (pg 2202), would look like this:
 //
-//     [TCP:flags:S]-
-//        duplicate(
-//           tamper{TCP:flags:replace:SA}(
-//              send),
-//            send)-| \/
-//     [TCP:flags:R]-drop-|
+//	[TCP:flags:S]-
+//	   duplicate(
+//	      tamper{TCP:flags:replace:SA}(
+//	         send),
+//	       send)-| \/
+//	[TCP:flags:R]-drop-|
 //
 // In this example, the outbound forest would trigger on TCP packets that have just the `SYN` flag
 // set, and would perform a few different actions on those packets. The inbound forest would only
@@ -40,9 +39,10 @@ import (
 	"io"
 	"strings"
 
+	"github.com/google/gopacket"
+
 	"github.com/getlantern/geneva/actions"
 	"github.com/getlantern/geneva/internal/scanner"
-	"github.com/google/gopacket"
 )
 
 // Forest refers to an ordered list of (trigger, action tree) pairs.

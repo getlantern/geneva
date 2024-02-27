@@ -39,7 +39,11 @@ func (at *ActionTree) String() string {
 // Matches returns whether this action tree's trigger matches the packet.
 func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
 	r, err := at.Trigger.Matches(packet)
-	return r, fmt.Errorf("match failed: %w", err)
+	if err != nil {
+		return r, fmt.Errorf("match failed: %w", err)
+	}
+
+	return r, nil
 }
 
 // Apply applies this action tree to the packet, returning zero or more potentially-modified

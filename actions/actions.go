@@ -50,7 +50,11 @@ func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
 // packets.
 func (at *ActionTree) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 	r, err := at.RootAction.Apply(packet)
-	return r, fmt.Errorf("apply failed: %w", err)
+	if err != nil {
+		return r, fmt.Errorf("apply failed: %w", err)
+	}
+
+	return r, nil
 }
 
 // ParseActionTree attempts to parse an action tree from its input.

@@ -236,7 +236,7 @@ var (
 		"dataofs":           TCPFieldDataOff,
 		"flags":             TCPFieldFlags,
 		"window":            TCPFieldWindow,
-		"urgent":            TCPFieldUrgent,
+		"urgptr":            TCPFieldUrgent,
 		"chksum":            TCPFieldChecksum,
 		"options-eol":       TCPOptionEol,
 		"options-nop":       TCPOptionNop,
@@ -253,8 +253,8 @@ var (
 
 	// tcpOptionLengths is a map of TCP options to the length of their data field.
 	tcpOptionLengths = map[TCPField]int{
-		TCPOptionEol:       0,
-		TCPOptionNop:       0,
+		TCPOptionEol:       1,
+		TCPOptionNop:       1,
 		TCPOptionMss:       2,
 		TCPOptionWscale:    1,
 		TCPOptionSackok:    0, // the geneva team has this listed as 0, so at most the data is deleted
@@ -313,14 +313,20 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 		case field == TCPLoad:
 			gen.vBytes = []byte(ta.NewValue)
 		default:
-			val, err := strconv.ParseUint(ta.NewValue, 10, 32)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"%w: %q is not a valid value for field %q",
-					ErrInvalidTamperRule,
-					ta.NewValue,
-					ta.Field,
-				)
+			var (
+				val uint64
+				err error
+			)
+			if ta.NewValue != "" {
+				val, err = strconv.ParseUint(ta.NewValue, 10, 32)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"%w: %q is not a valid value for field %q",
+						ErrInvalidTamperRule,
+						ta.NewValue,
+						ta.Field,
+					)
+				}
 			}
 
 			gen.vUint = uint32(val)

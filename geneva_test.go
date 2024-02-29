@@ -3,43 +3,55 @@ package geneva_test
 import (
 	"testing"
 
-	"github.com/getlantern/geneva"
-)
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-var examples = []string{
-	"[TCP:flags:PA]-duplicate(tamper{TCP:dataofs:replace:10}(tamper{TCP:chksum:corrupt},),)-|",
-	"[TCP:flags:PA]-duplicate(tamper{TCP:dataofs:replace:10}(tamper{IP:ttl:replace:10},),)-|",
-	"[TCP:flags:PA]-duplicate(tamper{TCP:dataofs:replace:10}(tamper{TCP:ack:corrupt},),)-|",
-	"[TCP:flags:PA]-duplicate(tamper{TCP:options-wscale:corrupt}(tamper{TCP:dataofs:replace:8},),)-|",
-	"[TCP:flags:PA]-duplicate(tamper{TCP:load:corrupt}(tamper{TCP:chksum:corrupt},),)-|",
-	"[TCP:flags:PA]-duplicate(tamper{TCP:load:corrupt}(tamper{IP:ttl:replace:8},),)-|",
-	"[TCP:flags:PA]-duplicate(tamper{TCP:load:corrupt}(tamper{TCP:ack:corrupt},),)-|",
-	"[TCP:flags:S]-duplicate(,tamper{TCP:load:corrupt})-|",
-	"[TCP:flags:PA]-duplicate(tamper{IP:len:replace:64},)-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:flags:replace:R}(tamper{TCP:chksum:corrupt},))-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:flags:replace:R}(tamper{IP:ttl:replace:10},))-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:options-md5header:corrupt}(tamper{TCP:flags:replace:R},))-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:flags:replace:RA}(tamper{TCP:chksum:corrupt},))-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:flags:replace:RA}(tamper{IP:ttl:replace:10},))-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:options-md5header:corrupt}(tamper{TCP:flags:replace:R},))-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:flags:replace:FRAPUEN}(tamper{TCP:chksum:corrupt},))-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:flags:replace:FREACN}(tamper{IP:ttl:replace:10},))-|",
-	"[TCP:flags:A]-duplicate(,tamper{TCP:flags:replace:FRAPUN}(tamper{TCP:options-md5header:corrupt},))-|",
-	"[TCP:flags:PA]-fragment{tcp:8:False}-| [TCP:flags:A]-tamper{TCP:seq:corrupt}-|",
-	"[TCP:flags:PA]-fragment{tcp:8:True}(,fragment{tcp:4:True})-|",
-	"[TCP:flags:PA]-fragment{tcp:-1:True}-|",
-	"[TCP:flags:PA]-duplicate(tamper{TCP:flags:replace:F}(tamper{IP:len:replace:78},),)-|",
-	"[TCP:flags:S]-duplicate(tamper{TCP:flags:replace:SA},)-|",
-	"[TCP:flags:PA]-tamper{TCP:options-uto:corrupt}-|",
-}
+	"github.com/getlantern/geneva"
+	"github.com/getlantern/geneva/strategy"
+)
 
 func TestNewStrategy(t *testing.T) {
 	t.Parallel()
 
-	for i, s := range examples {
+	for i, s := range geneva.Strategies {
 		_, err := geneva.NewStrategy(s)
-		if err != nil {
-			t.Errorf("failed to parse strategy %d %q: %v", i, s, err)
+		assert.NoError(t, err, "failed to parse strategy %d %q", i, s)
+	}
+}
+
+func TestApplyAllStrategies(t *testing.T) {
+	t.Parallel()
+
+	t.Log("reading pcap file")
+
+	packets := []gopacket.Packet{}
+	handle, err := pcap.OpenOffline("internal/testdata/input.pcap")
+	require.NoError(t, err, "failed to open pcap file")
+
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	for packet := range packetSource.Packets() {
+		packets = append(packets, packet)
+	}
+
+	t.Log("parsing strategies")
+
+	strategies := []*strategy.Strategy{}
+	for _, s := range geneva.Strategies {
+		strat, err := geneva.NewStrategy(s)
+		assert.NoError(t, err, "failed to parse strategy %q", s)
+		strategies = append(strategies, strat)
+	}
+
+	t.Log("applying strategies")
+
+	for _, s := range strategies {
+		for _, p := range packets {
+			p := gopacket.NewPacket(p.Data(), layers.LayerTypeEthernet, gopacket.Default)
+			_, err := s.Apply(p, strategy.DirectionOutbound)
+			assert.NoError(t, err, "strategy: %s\n%v", s, p)
 		}
 	}
 }

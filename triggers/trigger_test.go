@@ -5,10 +5,11 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/getlantern/geneva/internal/scanner"
-	"github.com/getlantern/geneva/triggers"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+
+	"github.com/getlantern/geneva/internal/scanner"
+	"github.com/getlantern/geneva/triggers"
 )
 
 func TestParseTrigger(t *testing.T) {
@@ -215,8 +216,13 @@ func TestIPTriggers(t *testing.T) {
 		{"src-invalid", "src", "192.168.1.48", false},
 		{"dst-valid", "dst", "192.168.2.1", true},
 		{"dst-invalid", "dst", "192.168.1.3", false},
-		{"load-valid", "load", "\xee\x3a\x00", true},
-		{"load-invalid", "load", "\xee\x3a\x00\f7", false},
+		{
+			"load-valid",
+			"load",
+			"\xee\x3a\x00\x16\x6b\x8b\xad\x49\x9f\x7b\x50\xae\x80\x18\x08\x0a\x61\x41\x00\x00\x01\x01\x08\x0a\x8b\xc1\xd9\x53\x28\xbf\x41\x06\x53\x53\x48\x2d\x32\x2e\x30\x2d\x4f\x70\x65\x6e\x53\x53\x48\x5f\x38\x2e\x31\x0d\x0a",
+			true,
+		},
+		{"load-invalid", "load", "\xee\x3a\x00\xf7", false},
 	}
 
 	for _, tc := range tt {

@@ -1,6 +1,7 @@
 package triggers
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -182,17 +183,7 @@ func matchTCPOption(field TCPField, value string, tcpLayer *layers.TCP) (bool, e
 
 	for _, opt := range tcpLayer.Options {
 		if opt.OptionType == optKind {
-			if len(opt.OptionData) < len(value) {
-				return false, nil
-			}
-
-			for i, b := range opt.OptionData {
-				if b != []byte(value)[i] {
-					return false, nil
-				}
-			}
-
-			return true, nil
+			return bytes.Equal(opt.OptionData, []byte(value)), nil
 		}
 	}
 
@@ -210,18 +201,7 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 	case TCPFieldFlags:
 		return matchField(t.value, tcpLayer), nil
 	case TCPFieldPayload:
-		if len(tcpLayer.Payload) < len(t.value) {
-			return false, nil
-		}
-
-		for i, r := range []byte(t.value) {
-			if r != tcpLayer.Payload[i] {
-				return false, nil
-			}
-		}
-
-		return true, nil
-
+		return bytes.Equal(tcpLayer.Payload, []byte(t.value)), nil
 	case TCPFieldOptionEOL, TCPFieldOptionNOP, TCPFieldOptionMSS, TCPFieldOptionWScale,
 		TCPFieldOptionSackOk, TCPFieldOptionSack, TCPFieldOptionTimestamp,
 		TCPFieldOptionAltChecksum, TCPFieldOptionAltChecksumOpt, TCPFieldOptionMD5Header,

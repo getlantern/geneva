@@ -1,6 +1,7 @@
 package triggers
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"strconv"
@@ -110,17 +111,7 @@ func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 	case IPFieldDestAddress:
 		return ipLayer.DstIP.Equal(net.ParseIP(t.value)), nil
 	case IPFieldPayload:
-		if len(ipLayer.Payload) < len(t.value) {
-			return false, nil
-		}
-
-		for i, r := range []byte(t.value) {
-			if r != ipLayer.Payload[i] {
-				return false, nil
-			}
-		}
-
-		return true, nil
+		return bytes.Equal(ipLayer.Payload, []byte(t.value)), nil
 	}
 
 	// The rest of the triggers work on numbers.

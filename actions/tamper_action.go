@@ -360,6 +360,13 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 		}
 	}
 
+	sb := gopacket.NewSerializeBuffer()
+	err := gopacket.SerializePacket(sb, gopacket.SerializeOptions{}, packet)
+	if err != nil {
+		panic(err)
+	}
+	packet = gopacket.NewPacket(sb.Bytes(), layers.LayerTypeEthernet, gopacket.Default)
+
 	return a.Action.Apply(packet)
 }
 

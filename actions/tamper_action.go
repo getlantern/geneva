@@ -421,14 +421,6 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) {
 			opt.OptionLength = uint8(tcpOptionLengths[field]) + 2
 		}
 	}
-
-	// let gopacket handle converting the modified TCP headers into []byte for us since we changed the struct fields
-	// instead of the underlying []byte directly. SerializeTo doesn't write the changes to the raw packet
-	// so we have to copy the formatted bytes back into the packet header.
-	sb := gopacket.NewSerializeBuffer()
-	tcp.SerializeTo(sb, gopacket.SerializeOptions{})
-	tcp.Contents = make([]byte, len(sb.Bytes()))
-	copy(tcp.Contents, sb.Bytes())
 }
 
 // tcpFlagsToUint32 converts a string of TCP flags to a uint32 bitmap.

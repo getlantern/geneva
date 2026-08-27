@@ -8,10 +8,11 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 
 	"github.com/getlantern/geneva/common"
 	"github.com/getlantern/geneva/internal"
@@ -101,7 +102,7 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 
 	fields := strings.Split(str, ":")
 	if len(fields) < 3 || len(fields) > 4 {
-		return nil, fmt.Errorf("%s: invalid field, %w", ErrInvalidTamperRule, err)
+		return nil, fmt.Errorf("%w: expected three or four fields", ErrInvalidTamperRule)
 	}
 
 	var (
@@ -114,9 +115,15 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 
 	switch strings.ToLower(fields[2]) {
 	case "replace":
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("%w: replace mode requires a value", ErrInvalidTamperRule)
+		}
 		mode = TamperReplace
 		newValue = fields[3]
 	case "corrupt":
+		if len(fields) != 3 {
+			return nil, fmt.Errorf("%w: corrupt mode does not accept a value", ErrInvalidTamperRule)
+		}
 		mode = TamperCorrupt
 	default:
 		return nil, fmt.Errorf(
@@ -245,7 +252,7 @@ var (
 		"options-sackok":    TCPOptionSackok,
 		"options-sack":      TCPOptionSack,
 		"options-timestamp": TCPOptionTimestamp,
-		"options-altchksum": TCPOptionTimestamp,
+		"options-altchksum": TCPOptionAltCkhsum,
 		"options-md5header": TCPOptionMd5Header,
 		"options-uto":       TCPOptionUto,
 		"load":              TCPLoad,
@@ -290,7 +297,7 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 		return &TCPTamperAction{
 			TamperAction: ta,
 			field:        field,
-			valueGen:     &tamperCorruptGen{r},
+			valueGen:     &tamperCorruptGen{r: r},
 		}, nil
 	case TamperReplace:
 		gen := &tamperReplaceGen{}
@@ -349,29 +356,41 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 		return nil, errors.New("packet does not have a TCP layer")
 	}
 
-	tamperTCP(tcp, a.field, a.valueGen)
+	if err := tamperTCP(tcp, a.field, a.valueGen); err != nil {
+		return nil, fmt.Errorf("failed to serialize tampered TCP header: %w", err)
+	}
 
-	// if tampering with TCP options, we need to update the data offset and checksum
-	if strings.HasPrefix(a.Field, "options") {
-		updateTCPDataOffAndChksum(tcp)
+	// Repair fields that depend on the tampered header: TCP options change the header size
+	// and payload replacement changes the IP packet size. Deliberately corrupted length and
+	// checksum fields are preserved.
+	if tcpFieldIsOption(a.field) {
+		updateTCPDataOffset(tcp)
+	}
+	if a.field != TCPFieldChecksum {
+		common.UpdateTCPChecksum(tcp)
+	}
 
-		if ip, _ := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4); ip != nil {
-			updateIPv4Length(ip)
+	ip, _ := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
+	if ip != nil {
+		if tcpAffectsIPLength(a.field) {
+			updateIPv4LengthForTCP(ip, tcp)
 		}
+		common.UpdateIPv4Checksum(ip)
 	}
 
-	sb := gopacket.NewSerializeBuffer()
-	err := gopacket.SerializePacket(sb, gopacket.SerializeOptions{}, packet)
+	// Stop at TCP and serialize its current payload. This also preserves
+	// intentionally malformed segments that gopacket follows with a
+	// non-serializable decode-failure layer.
+	packet, err := serializeTamperedPacket(packet, tcp, true)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to serialize tampered packet: %w", err)
 	}
-	packet = gopacket.NewPacket(sb.Bytes(), layers.LayerTypeEthernet, gopacket.Default)
 
 	return a.Action.Apply(packet)
 }
 
 // tamperTCP modifies the given TCP field using the given value generator.
-func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) {
+func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) error {
 	switch field {
 	case TCPFieldSrcPort:
 		tcp.SrcPort = layers.TCPPort(valueGen.uint(16))
@@ -421,6 +440,29 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) {
 			opt.OptionLength = uint8(tcpOptionLengths[field]) + 2
 		}
 	}
+
+	buffer := gopacket.NewSerializeBuffer()
+	if err := tcp.SerializeTo(buffer, gopacket.SerializeOptions{}); err != nil {
+		return err
+	}
+	tcp.Contents = append(tcp.Contents[:0], buffer.Bytes()...)
+
+	return nil
+}
+
+// tcpFieldIsOption reports whether the field is a TCP header option. Options live inside the
+// TCP header, so tampering one changes the header size and therefore the data offset.
+func tcpFieldIsOption(field TCPField) bool {
+	_, ok := tcpOptionLengths[field]
+	return ok
+}
+
+// tcpAffectsIPLength reports whether tampering the field changes the encapsulating IPv4
+// packet's Total Length: TCP options change the TCP header size, and replacing the TCP
+// payload changes its payload size. Any new TCPField that can change either of those sizes
+// must be added here, or serializeTamperedPacket will emit a stale Total Length for it.
+func tcpAffectsIPLength(field TCPField) bool {
+	return tcpFieldIsOption(field) || field == TCPLoad
 }
 
 // tcpFlagsToUint32 converts a string of TCP flags to a uint32 bitmap.
@@ -467,16 +509,13 @@ func setTCPFlags(tcp *layers.TCP, flags uint16) {
 	tcp.NS = flags&0x0100 != 0
 }
 
-// updateTCPDataOffAndChksum updates the TCP data offset and checksum fields on the TCP struct
-// and in the raw packet bytes.
-func updateTCPDataOffAndChksum(tcp *layers.TCP) {
+// updateTCPDataOffset updates the TCP data offset on the TCP struct and in the
+// raw header bytes.
+func updateTCPDataOffset(tcp *layers.TCP) {
 	// update data offset
 	headerLen := len(tcp.Contents)
 	tcp.DataOffset = uint8(headerLen / 4)
 	tcp.Contents[12] = tcp.DataOffset << 4
-
-	// update checksum.
-	common.UpdateTCPChecksum(tcp)
 }
 
 //
@@ -504,13 +543,14 @@ const (
 )
 
 var ipv4Fields = map[string]IPv4Field{
-	"srcip":  IPv4FieldSrcIP,
-	"dstip":  IPv4FieldDstIP,
-	"verion": IPv4FieldVersion,
-	"ihl":    IPv4FieldIHL,
-	"tos":    IPv4FieldTOS,
-	"len":    IPv4FieldLength,
-	"id":     IPv4FieldID,
+	"srcip":   IPv4FieldSrcIP,
+	"dstip":   IPv4FieldDstIP,
+	"version": IPv4FieldVersion,
+	"verion":  IPv4FieldVersion,
+	"ihl":     IPv4FieldIHL,
+	"tos":     IPv4FieldTOS,
+	"len":     IPv4FieldLength,
+	"id":      IPv4FieldID,
 	//
 	// I don't know what the flags will look like in a tamper rule
 	// shouldn't be a problem since there isn't any tamper rules for IP flags currently
@@ -547,7 +587,7 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 		return &IPv4TamperAction{
 			TamperAction: ta,
 			field:        field,
-			valueGen:     &tamperCorruptGen{r},
+			valueGen:     &tamperCorruptGen{r: r},
 		}, nil
 	case TamperReplace:
 		gen := &tamperReplaceGen{}
@@ -564,7 +604,7 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 				return nil, fmt.Errorf("%w: IPv6 is not supported", ErrInvalidTamperRule)
 			}
 
-			gen.vBytes = ip
+			gen.vBytes = ip.To4()
 		case IPv4Load:
 			gen.vBytes = []byte(ta.NewValue)
 		default:
@@ -594,14 +634,35 @@ func (a *IPv4TamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, err
 		return nil, errors.New("packet does not have a IPv4 layer")
 	}
 
-	tamperIPv4(ip, a.field, a.valueGen)
-	common.UpdateIPv4Checksum(ip)
+	if err := tamperIPv4(ip, a.field, a.valueGen); err != nil {
+		return nil, fmt.Errorf("failed to serialize tampered IPv4 header: %w", err)
+	}
+	if a.field == IPv4Load {
+		updateIPv4Length(ip)
+	}
+	if a.field != IPv4FieldChecksum {
+		common.UpdateIPv4Checksum(ip)
+	}
+
+	if (a.field == IPv4FieldSrcIP || a.field == IPv4FieldDstIP) && packet.TransportLayer() != nil {
+		if tcp, ok := packet.TransportLayer().(*layers.TCP); ok {
+			if err := tcp.SetNetworkLayerForChecksum(ip); err != nil {
+				return nil, fmt.Errorf("failed to update TCP checksum network layer: %w", err)
+			}
+			common.UpdateTCPChecksum(tcp)
+		}
+	}
+
+	packet, err := serializeTamperedPacket(packet, ip, a.field == IPv4Load)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize tampered packet: %w", err)
+	}
 
 	return a.Action.Apply(packet)
 }
 
 // tamperIPv4 modifies the given IP field using the given value generator.
-func tamperIPv4(ip *layers.IPv4, field IPv4Field, valueGen tamperValueGen) {
+func tamperIPv4(ip *layers.IPv4, field IPv4Field, valueGen tamperValueGen) error {
 	switch field {
 	case IPv4FieldSrcIP:
 		ip.SrcIP = valueGen.bytes(4)
@@ -632,16 +693,30 @@ func tamperIPv4(ip *layers.IPv4, field IPv4Field, valueGen tamperValueGen) {
 	// let gopacket handle converting modified packet into []byte again, it's just easier
 	// again copy the bytes back into the packet header
 	sb := gopacket.NewSerializeBuffer()
-	ip.SerializeTo(sb, gopacket.SerializeOptions{})
+	if err := ip.SerializeTo(sb, gopacket.SerializeOptions{}); err != nil {
+		return err
+	}
 	ip.Contents = make([]byte, len(sb.Bytes()))
 	copy(ip.Contents, sb.Bytes())
+
+	return nil
 }
 
-// updateIPv4Length updates the IPv4 length.
-func updateIPv4Length(ip *layers.IPv4) {
-	length := len(ip.Contents) + len(ip.Payload)
+// setIPv4Length sets the IPv4 header's Total Length to the given byte count, both on the struct
+// and in the raw header bytes.
+func setIPv4Length(ip *layers.IPv4, length int) {
 	ip.Length = uint16(length)
 	binary.BigEndian.PutUint16(ip.Contents[2:4], ip.Length)
+}
+
+// updateIPv4Length updates the IPv4 length after its payload changed.
+func updateIPv4Length(ip *layers.IPv4) {
+	setIPv4Length(ip, len(ip.Contents)+len(ip.Payload))
+}
+
+// updateIPv4LengthForTCP updates the IPv4 length after the TCP layer it encapsulates changed.
+func updateIPv4LengthForTCP(ip *layers.IPv4, tcp *layers.TCP) {
+	setIPv4Length(ip, len(ip.Contents)+len(tcp.Contents)+len(tcp.Payload))
 }
 
 // tamperValueGen is a value generator for tamper actions.
@@ -673,18 +748,34 @@ func (g *tamperReplaceGen) bytes(n int) []byte {
 
 // tamperCorruptGen generates random values for tamperCorrupt actions.
 type tamperCorruptGen struct {
-	r *rand.Rand
+	mu sync.Mutex
+	r  *rand.Rand
 }
 
-// uint returns a random value of the given bit size as a uint32.
+// uint returns a uniformly random value of the given bit size as a uint32. Every value in
+// [0, 2^bitSize-1] is reachable, including the field's true maximum, on both 64-bit and 32-bit
+// platforms (unlike an Intn-based implementation, which cannot express 1<<31 on 32-bit builds).
 func (g *tamperCorruptGen) uint(bitSize int) uint32 {
-	n := g.r.Intn(1<<bitSize - 1)
-	return uint32(n)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	r := g.r.Uint32()
+	switch {
+	case bitSize <= 8:
+		return r & 0xff
+	case bitSize <= 16:
+		return r & 0xffff
+	default:
+		return r
+	}
 }
 
 // bytes returns a random byte slice of length n if n <= 20, otherwise it returns a
 // a random byte slice of random length up to n.
 func (g *tamperCorruptGen) bytes(n int) []byte {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	if n > 20 {
 		n = g.r.Intn(n)
 	}

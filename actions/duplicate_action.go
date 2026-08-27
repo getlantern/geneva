@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/gopacket"
+	"github.com/gopacket/gopacket"
 
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
@@ -52,7 +52,7 @@ func (a *DuplicateAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 	)
 
 	if duped, err = duplicate(packet); err != nil {
-		return nil, fmt.Errorf("failed to duplciate packet: %w", err)
+		return nil, fmt.Errorf("failed to duplicate packet: %w", err)
 	}
 
 	if lpackets, err = a.Left.Apply(duped[0]); err != nil {

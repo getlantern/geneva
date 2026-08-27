@@ -1,16 +1,47 @@
 package actions_test
 
 import (
+	"bytes"
 	"fmt"
+	"net"
 	"testing"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 
 	"github.com/getlantern/geneva/actions"
 	"github.com/getlantern/geneva/common"
 	"github.com/getlantern/geneva/internal/scanner"
 )
+
+// TestActionlessActionTree ports the canonical behavior that an action tree may omit its action
+// entirely ("[trigger]-|"); such trees parse, serialize, and pass packets through unharmed.
+func TestActionlessActionTree(t *testing.T) {
+	tree, err := actions.ParseActionTree(scanner.NewScanner("[IP:ttl:64]-|"))
+	if err != nil {
+		t.Fatalf("ParseActionTree() got an error: %v", err)
+	}
+
+	if tree.RootAction != nil {
+		t.Fatalf("expected nil root action, got %T", tree.RootAction)
+	}
+
+	if got := tree.String(); got != "[IP:ttl:64]-|" {
+		t.Fatalf("String() = %q, expected %q", got, "[IP:ttl:64]-|")
+	}
+
+	packet := gopacket.NewPacket(ssh, layers.LayerTypeIPv4, gopacket.Default)
+	result, err := tree.Apply(packet)
+	if err != nil {
+		t.Fatalf("Apply() got an error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("Apply() returned %d packets; a passthrough tree returns the packet unharmed", len(result))
+	}
+	if !bytes.Equal(result[0].Data(), packet.Data()) {
+		t.Fatal("passthrough tree modified the packet")
+	}
+}
 
 var (
 	ping = []byte{
@@ -145,7 +176,6 @@ func TestParseFragmentAction(t *testing.T) {
 	tests := []string{
 		"fragment{IP:10:true}",
 		"fragment{TCP:10:true}(,drop)",
-		"fragment{UDP:10:true}(drop,)",
 		"fragment{IP:10:true}(duplicate(,),)",
 		"fragment{IP:10:false}(duplicate(,),)",
 	}
@@ -376,6 +406,32 @@ func TestFragmentActionIP(t *testing.T) {
 	}
 }
 
+// Ported from upstream's fragment fallback test. A fragment action remains a
+// branching action even when a zero offset cannot split the packet.
+func TestFragmentActionIPZeroDuplicates(t *testing.T) {
+	t.Parallel()
+
+	pkt := gopacket.NewPacket(ssh, layers.LayerTypeIPv4, gopacket.Default)
+	action, err := actions.ParseAction(scanner.NewScanner("fragment{IP:0:false}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := action.Apply(pkt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("got %d packets, expected 2", len(result))
+	}
+	if result[0] == result[1] {
+		t.Fatal("fallback duplicate returned aliased packet objects")
+	}
+	if !bytes.Equal(result[0].Data(), result[1].Data()) {
+		t.Fatal("fallback duplicate packets differ")
+	}
+}
+
 type tcpFragmentResult struct {
 	frag          gopacket.Packet
 	ip4Len        uint16
@@ -520,6 +576,46 @@ func TestFragmentActionTCP(t *testing.T) {
 	}
 }
 
+// Ported from upstream's overlapping-segment tests. Overlap extends the first
+// segment without changing where the second segment starts or its sequence.
+func TestFragmentActionTCPOverlap(t *testing.T) {
+	t.Parallel()
+
+	pkt := gopacket.NewPacket(ssh, layers.LayerTypeIPv4, gopacket.Default)
+	originalTCP, ok := pkt.TransportLayer().(*layers.TCP)
+	if !ok {
+		t.Fatal("test packet has no TCP layer")
+	}
+	originalPayload := append([]byte(nil), originalTCP.Payload...)
+
+	action, err := actions.ParseAction(scanner.NewScanner("fragment{TCP:9:true:4}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := action.String(); got != "fragment{TCP:9:true:4}" {
+		t.Fatalf("overlap was not serialized: got %q", got)
+	}
+
+	result, err := action.Apply(pkt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("got %d segments, expected 2", len(result))
+	}
+	first := result[0].TransportLayer().(*layers.TCP)  //nolint:forcetypeassert
+	second := result[1].TransportLayer().(*layers.TCP) //nolint:forcetypeassert
+	if !bytes.Equal(first.Payload, originalPayload[:13]) {
+		t.Errorf("first payload = %q, expected %q", first.Payload, originalPayload[:13])
+	}
+	if !bytes.Equal(second.Payload, originalPayload[9:]) {
+		t.Errorf("second payload = %q, expected %q", second.Payload, originalPayload[9:])
+	}
+	if second.Seq != originalTCP.Seq+9 {
+		t.Errorf("second sequence = %d, expected %d", second.Seq, originalTCP.Seq+9)
+	}
+}
+
 func TestActionTreeSimple(t *testing.T) {
 	t.Parallel()
 
@@ -604,4 +700,102 @@ func TestActionCanonicalization(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFragmentActionIPOversizedFragSize is a regression test for an over-large IP fragment
+// size: the clamp previously never fired, so Apply panicked with a slice-bounds error.
+func TestFragmentActionIPOversizedFragSize(t *testing.T) {
+	packet := fragmentedIPPayloadPacket(t)
+
+	for _, dna := range []string{"fragment{IP:8:true}", "fragment{IP:1000:true}"} {
+		a, err := actions.ParseAction(scanner.NewScanner(dna))
+		if err != nil {
+			t.Fatalf("ParseAction(%q) got an error: %v", dna, err)
+		}
+
+		result, err := a.Apply(packet)
+		if err != nil {
+			t.Fatalf("Apply(%q) got an error: %v", dna, err)
+		}
+		if len(result) != 2 {
+			t.Fatalf("Apply(%q) returned %d packets, expected 2", dna, len(result))
+		}
+	}
+}
+
+// TestFragmentActionTCPZeroFragSize documents canonical behavior: TCP fragment sizes are in
+// bytes, so fragSize zero yields a header-only first segment and the untouched payload second.
+func TestFragmentActionTCPZeroFragSize(t *testing.T) {
+	packet := fragmentedIPPayloadPacket(t)
+
+	a, err := actions.ParseAction(scanner.NewScanner("fragment{TCP:0:true}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := a.Apply(packet)
+	if err != nil {
+		t.Fatalf("Apply() got an error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("Apply() returned %d packets, expected 2", len(result))
+	}
+
+	first, ok := result[0].TransportLayer().(*layers.TCP)
+	if !ok || first == nil {
+		t.Fatal("first segment does not decode as TCP")
+	}
+	if len(first.Payload) != 0 {
+		t.Errorf("first segment payload = %q, expected header-only", first.Payload)
+	}
+
+	second, ok := result[1].TransportLayer().(*layers.TCP)
+	if !ok || second == nil {
+		t.Fatal("second segment does not decode as TCP")
+	}
+	orig, _ := packet.TransportLayer().(*layers.TCP)
+	if string(second.Payload) != string(orig.Payload) {
+		t.Errorf("second segment payload = %q, expected original %q", second.Payload, orig.Payload)
+	}
+	if second.Seq != orig.Seq {
+		t.Errorf("second segment seq = %d, expected original %d", second.Seq, orig.Seq)
+	}
+}
+
+// fragmentedIPPayloadPacket builds a well-formed IPv4/TCP packet carrying exactly 20 bytes of
+// payload (large enough that IP fragmentation cannot clamp to its midpoint).
+func fragmentedIPPayloadPacket(t *testing.T) gopacket.Packet {
+	ip := &layers.IPv4{
+		Version:  4,
+		IHL:      5,
+		TTL:      64,
+		Protocol: layers.IPProtocolTCP,
+		SrcIP:    net.IPv4(192, 0, 2, 1),
+		DstIP:    net.IPv4(198, 51, 100, 2),
+	}
+	tcp := &layers.TCP{
+		SrcPort: 12345,
+		DstPort: 443,
+		Seq:     100,
+		Ack:     200,
+		SYN:     true,
+		Window:  65535,
+	}
+	if err := tcp.SetNetworkLayerForChecksum(ip); err != nil {
+		t.Fatal(err)
+	}
+
+	buffer := gopacket.NewSerializeBuffer()
+	err := gopacket.SerializeLayers(
+		buffer,
+		gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true},
+		ip,
+		tcp,
+		gopacket.Payload("0123456789abcdefghij"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return gopacket.NewPacket(buffer.Bytes(), layers.LayerTypeIPv4, gopacket.Default)
 }

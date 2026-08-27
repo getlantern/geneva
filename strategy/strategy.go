@@ -39,7 +39,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/google/gopacket"
+	"github.com/gopacket/gopacket"
 
 	"github.com/getlantern/geneva/actions"
 	"github.com/getlantern/geneva/internal/scanner"
@@ -78,10 +78,11 @@ const (
 
 // Apply applies the strategy to a given packet.
 func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Packet, error) {
-	if dir == DirectionInbound && s.Inbound == nil {
-		return []gopacket.Packet{packet}, nil
-	} else if dir == DirectionOutbound && s.Outbound == nil {
-		return []gopacket.Packet{packet}, nil
+	if s == nil {
+		return nil, errors.New("strategy is nil")
+	}
+	if dir != DirectionInbound && dir != DirectionOutbound {
+		return nil, fmt.Errorf("invalid packet direction %d", dir)
 	}
 
 	var forest Forest
@@ -96,47 +97,58 @@ func (s *Strategy) Apply(packet gopacket.Packet, dir Direction) ([]gopacket.Pack
 	}
 
 	packets := make([]gopacket.Packet, 0, 2)
+	matched := false
 
 	for i, at := range forest {
-		// Each action tree in a forest must get a "fresh" copy of the original packet.
-		// That said, we try to avoid an extra memory copy in the (highly likely) event that
-		// each forest consists of a single action tree.
-		pkt := packet
-
-		if len(forest) > 1 {
-			// no idea why we'd ever get a packet with no layers, but this is probably
-			// better than a panic.
-			if layers := packet.Layers(); len(layers) > 0 {
-				opts := gopacket.DecodeOptions{}
-				pkt = gopacket.NewPacket(packet.Data(), layers[0].LayerType(), opts)
-			}
-		}
-
-		m, err := at.Matches(pkt)
+		m, err := at.Matches(packet)
 		if err != nil {
 			return nil, fmt.Errorf("error matching action tree %d: %w", i, err)
 		}
 
 		if m {
+			matched = true
+			pkt, err := clonePacket(packet)
+			if err != nil {
+				return nil, fmt.Errorf("failed to copy packet for action tree %d: %w", i, err)
+			}
 			result, err := at.Apply(pkt)
 			if err != nil {
 				return nil, fmt.Errorf("failed to apply action tree: %w", err)
 			}
 
 			packets = append(packets, result...)
-		} else {
-			// When the action tree doesn't match, return the packet unharmed
-			packets = append(packets, packet)
 		}
+	}
+	if !matched {
+		return []gopacket.Packet{packet}, nil
 	}
 
 	return packets, nil
 }
 
+func clonePacket(packet gopacket.Packet) (gopacket.Packet, error) {
+	layers := packet.Layers()
+	if len(layers) == 0 {
+		return nil, errors.New("packet has no parseable layers")
+	}
+
+	data := append([]byte(nil), packet.Data()...)
+	return gopacket.NewPacket(data, layers[0].LayerType(), gopacket.Default), nil
+}
+
 // ParseStrategy parses a string representation of a strategy into the actual Strategy object.
 //
-// If the string is malformed, an error will be returned instead.
+// This matches canonical Geneva parsing: a single pair of surrounding double quotes is stripped,
+// whitespace is tolerated between trees and around the "\/" delimiter, and an empty or
+// quote-delimiter-only string parses into a valid, empty Strategy. An action tree may omit its
+// action entirely (e.g. "[TCP:flags:A]-|"), in which case matching packets pass through unharmed.
+//
+// If the string is malformed beyond that, an error will be returned instead.
 func ParseStrategy(strategy string) (*Strategy, error) {
+	// Canonical Geneva accepts strategies wrapped in a single pair of hanging quotes.
+	strategy = strings.TrimPrefix(strategy, `"`)
+	strategy = strings.TrimSuffix(strategy, `"`)
+
 	// outbound-tree \/ inbound-tree
 	s := scanner.NewScanner(strings.TrimSpace(strategy))
 
@@ -144,18 +156,23 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 		make([]*actions.ActionTree, 0, 1),
 		make([]*actions.ActionTree, 0, 1),
 	}
+	finish := func() (*Strategy, error) {
+		if err := Validate(st); err != nil {
+			return nil, fmt.Errorf("while validating strategy: %w", err)
+		}
+		return st, nil
+	}
 
-	for {
-		if s.FindToken(`\/`, true) {
-			break
+	for !s.FindToken(`\/`, true) {
+		s.Chomp()
+
+		// Nothing left to parse; the remaining forest (or the entire strategy) is empty.
+		if _, err := s.Peek(); errors.Is(err, io.EOF) {
+			return finish()
 		}
 
 		outbound, err := actions.ParseActionTree(s)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return st, nil
-			}
-
 			return nil, fmt.Errorf("while parsing strategy: %w", err)
 		}
 
@@ -166,7 +183,7 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 		if _, err = s.Peek(); errors.Is(err, io.EOF) {
 			// there is no inbound strategy, and this strategy didn't end with the \/
 			// delimiter.
-			return st, nil
+			return finish()
 		}
 	}
 
@@ -174,7 +191,7 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 
 	if _, err := s.Expect(`\/`); err != nil {
 		if errors.Is(err, io.EOF) {
-			return st, nil
+			return finish()
 		}
 		// okay fine, you've already used your free pass above, so now we'll fail hard.
 		return nil, fmt.Errorf("missing \\/ delimiter or invalid strategy: %w", err)
@@ -196,9 +213,10 @@ func ParseStrategy(strategy string) (*Strategy, error) {
 		}
 
 		st.Inbound = append(st.Inbound, inbound)
+		s.Chomp()
 	}
 
-	return st, nil
+	return finish()
 }
 
 // String returns a string representation of this Strategy.
@@ -218,5 +236,7 @@ func (s *Strategy) String() string {
 
 	o := strings.Join(outbound, " ")
 
-	return strings.TrimSpace(fmt.Sprintf(`%s \/ %s`, o, i))
+	// Canonical Geneva formats a Strategy as "<outbound> \/ <inbound>" without trimming
+	// surrounding space: an empty forest serializes to just the padded delimiter.
+	return fmt.Sprintf(`%s \/ %s`, o, i)
 }

@@ -4,17 +4,22 @@
 package triggers
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
-	"github.com/google/gopacket"
+	"github.com/gopacket/gopacket"
 
 	// gopacket best practice says import this, too.
-	_ "github.com/google/gopacket/layers"
+	_ "github.com/gopacket/gopacket/layers"
 )
+
+// ErrInvalidTrigger is returned when a trigger cannot be safely evaluated by
+// the IPv4/TCP strategy engine.
+var ErrInvalidTrigger = errors.New("invalid trigger")
 
 // Trigger is implemented by any value that describes a Geneva trigger.
 type Trigger interface {
@@ -51,9 +56,9 @@ func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
 	_, _ = s.Pop()
 
 	fields := strings.Split(str, ":")
-	if len(fields) < 3 {
+	if len(fields) != 3 && len(fields) != 4 {
 		return nil, fmt.Errorf(
-			`trigger "[%s]" must have at least three fields (found %d)`,
+			`trigger "[%s]" must have three or four fields (found %d)`,
 			str, len(fields))
 	}
 
@@ -61,21 +66,25 @@ func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
 		return nil, fmt.Errorf(`trigger "[%s]" does not specify a protocol`, str)
 	}
 
-	gas := 0
+	var gas *int
 	if len(fields) == 4 {
-		gas, err = strconv.Atoi(fields[3])
+		parsedGas, parseErr := strconv.Atoi(fields[3])
+		err = parseErr
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse value for gas: %w", err)
 		}
+		gas = &parsedGas
 	}
 
 	var trigger Trigger
 
 	switch strings.ToLower(fields[0]) {
 	case "ip":
-		trigger, err = NewIPTrigger(fields[1], fields[2], gas)
+		trigger, err = newIPTrigger(fields[1], fields[2], gas)
 	case "tcp":
-		trigger, err = NewTCPTrigger(fields[1], fields[2], gas)
+		trigger, err = newTCPTrigger(fields[1], fields[2], gas)
+	default:
+		return nil, fmt.Errorf("unsupported trigger protocol %q", fields[0])
 	}
 
 	if err != nil {
@@ -83,4 +92,28 @@ func ParseTrigger(s *scanner.Scanner) (Trigger, error) {
 	}
 
 	return trigger, nil
+}
+
+// Validate checks that trigger is a supported, fully configured IPv4 or TCP
+// trigger. It does not consume trigger gas.
+func Validate(trigger Trigger) error {
+	if trigger == nil {
+		return fmt.Errorf("%w: trigger is nil", ErrInvalidTrigger)
+	}
+
+	var err error
+	switch typed := trigger.(type) {
+	case *IPTrigger:
+		err = typed.validate()
+	case *TCPTrigger:
+		err = typed.validate()
+	default:
+		return fmt.Errorf("%w: unsupported trigger type %T", ErrInvalidTrigger, trigger)
+	}
+
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTrigger, err)
+	}
+
+	return nil
 }

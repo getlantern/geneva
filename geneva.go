@@ -3,9 +3,12 @@
 //
 // Geneva is both a method to describe ways of manipulating packets to attempt to circumvent
 // censorship, and a genetic algoritmm (GENetic EVAsion) that one can deploy to discover new
-// circumventions. (This package does not implement the genetic algorithm.) More broadly, one can
-// encode arbitrary instructions for packet manipulation using Geneva rules as a sort of "standard
-// syntax", although the use case outside of censorship circumvention may be somewhat tenuous.
+// circumventions. The building blocks of that genetic algorithm—the strategy mutation and
+// crossover operators—are implemented by the adjacent "mutate" package; the full evolution loop
+// (population management, fitness evaluation, and selection) is left to callers. More broadly, one
+// can encode arbitrary instructions for packet manipulation using Geneva rules as a sort of
+// "standard syntax", although the use case outside of censorship circumvention may be somewhat
+// tenuous.
 //
 // This package aims to implement the same triggers and actions that the Geneva project's canonical
 // Python package does.
@@ -50,7 +53,9 @@
 // to TCP packets with the RST flag set, and would simply drop them. Each of the forests in the
 // example are made up of a single (trigger, action tree) pair.
 //
-// In a forest, each action tree must adhere to the syntax "[trigger]-action-|".
+// In a forest, each action tree must adhere to the syntax "[trigger]-action-|". The action is
+// optional: canonical Geneva allows trigger-only passthrough trees such as "[TCP:flags:A]-|", and
+// parses strategies wrapped in a single pair of hanging double quotes.
 //
 // # Triggers
 //
@@ -58,7 +63,16 @@
 // example above, the first trigger is "[TCP:flags:S]". This is a trigger that matches on the TCP
 // protocol's "flags" field, and requires that only the SYN flag be set. (Note that this trigger
 // will not fire for packets that have, i.e., both SYN and ACK set.) If the packet is not a TCP
-// packet, or the flags do not match exactly, then this trigger will not fire.
+// packet, or the flags do not match exactly, then this trigger will not fire. As a compatibility
+// note (matching canonical Geneva), earlier versions of this library treated a bare flag set such
+// as "[TCP:flags:A]" as a subset match that fired whenever at least those bits were set; matching
+// is now exact. To opt back into subset matching, append a "*": "[TCP:flags:A*]" fires for any
+// segment with ACK set.
+//
+// Triggers optionally accept a fourth "gas" field that limits how many matching packets the
+// trigger can fire for: "[TCP:flags:S:3]" fires three times and then stops matching, while
+// "[TCP:flags:S:0]" never fires. Negative gas is a "bomb": "[TCP:flags:S:-2]" suppresses its first
+// two matches and then matches every subsequent packet indefinitely.
 //
 // # Actions
 //
@@ -92,7 +106,8 @@
 // header as the original packet (aside from the fields that must be fixed) and then the first eight
 // bytes of the payload. The second fragment will contain the other 52 bytes. (You can also indicate
 // that the fragments be returned out-of-order; i.e., reversed, by specifying "False" for the
-// "inOrder" argument.)
+// "inOrder" argument.) TCP fragmentation additionally supports an optional fourth "overlap" field,
+// e.g., "fragment{TCP:8:True:4}", which repeats that many bytes of payload in both fragments.
 //
 //	tamper{protocol:field:mode[:newValue]}(a1)
 //
@@ -105,7 +120,7 @@
 // Additionally, note that not all actions are valid for both inbound and outbound directions. The
 // Python code mentions that "branching actions are not supported on inbound trees". Practically,
 // this means that the duplicate and fragment actions can only be applied to outbound packets, while
-// the sleep, drop, and tamper actions can apply to packets of either direction.
+// the drop and tamper actions can apply to packets of either direction.
 //
 // See https://censorship.ai for more information about Geneva itself.
 package geneva
@@ -126,4 +141,9 @@ func NewStrategy(st string) (*strategy.Strategy, error) {
 	}
 
 	return s, nil
+}
+
+// Validate checks strategy DNA before it is proposed or deployed.
+func Validate(s *strategy.Strategy) error {
+	return strategy.Validate(s)
 }

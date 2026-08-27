@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 )
 
 // ErrUnsupportedOption is returned when an unsupported TCP option is specified in a trigger rule.
@@ -87,14 +87,14 @@ func ParseTCPField(field string) (TCPField, error) {
 type TCPTrigger struct {
 	field TCPField
 	value string
-	gas   int
+	gas   *triggerGas
 }
 
 // String returns a string representation of this trigger.
 func (t *TCPTrigger) String() string {
 	gas := ""
-	if t.gas > 0 {
-		gas = fmt.Sprintf(":%d", t.gas)
+	if value, ok := t.gas.value(); ok {
+		gas = fmt.Sprintf(":%d", value)
 	}
 
 	return fmt.Sprintf("[%s:%s:%s%s]", t.Protocol(), t.Field(), t.value, gas)
@@ -111,44 +111,86 @@ func (t *TCPTrigger) Field() string {
 }
 
 // Gas denotes how many times this trigger can fire before it stops triggering.
+//
+// Gas is lossy: an unlimited trigger and a fully configured-but-exhausted one both read as 0
+// here. Use GasConfigured when the distinction matters.
 func (t *TCPTrigger) Gas() int {
-	return t.gas
+	gas, _ := t.gas.value()
+	return gas
+}
+
+// GasConfigured returns the trigger's configured gas and whether a gas limit was configured at
+// all. Positive gas fires for that many matching packets, zero never fires, and negative gas is
+// a bomb that fires indefinitely after suppressing -gas matches. When configured is false the
+// trigger has unlimited gas.
+func (t *TCPTrigger) GasConfigured() (int, bool) {
+	return t.gas.value()
 }
 
 func matchField(value string, tcpLayer *layers.TCP) bool {
-	for _, c := range value {
-		var match bool
+	wildcard := strings.HasSuffix(value, "*")
+	value = strings.TrimSuffix(value, "*")
 
+	var wanted uint16
+	for _, c := range value {
 		switch c {
 		case 'F':
-			match = tcpLayer.FIN
+			wanted |= 0x001
 		case 'S':
-			match = tcpLayer.SYN
+			wanted |= 0x002
 		case 'R':
-			match = tcpLayer.RST
+			wanted |= 0x004
 		case 'P':
-			match = tcpLayer.PSH
+			wanted |= 0x008
 		case 'A':
-			match = tcpLayer.ACK
+			wanted |= 0x010
 		case 'U':
-			match = tcpLayer.URG
+			wanted |= 0x020
 		case 'E':
-			match = tcpLayer.ECE
+			wanted |= 0x040
 		case 'C':
-			match = tcpLayer.CWR
+			wanted |= 0x080
 		case 'N':
-			match = tcpLayer.NS
+			wanted |= 0x100
 		default:
-			match = false
-		}
-
-		if !match {
-			// bail early if the trigger wants a flag set that isn't
 			return false
 		}
 	}
 
-	return true
+	var actual uint16
+	if tcpLayer.FIN {
+		actual |= 0x001
+	}
+	if tcpLayer.SYN {
+		actual |= 0x002
+	}
+	if tcpLayer.RST {
+		actual |= 0x004
+	}
+	if tcpLayer.PSH {
+		actual |= 0x008
+	}
+	if tcpLayer.ACK {
+		actual |= 0x010
+	}
+	if tcpLayer.URG {
+		actual |= 0x020
+	}
+	if tcpLayer.ECE {
+		actual |= 0x040
+	}
+	if tcpLayer.CWR {
+		actual |= 0x080
+	}
+	if tcpLayer.NS {
+		actual |= 0x100
+	}
+
+	if wildcard {
+		return actual&wanted == wanted
+	}
+
+	return actual == wanted
 }
 
 func matchTCPOption(field TCPField, value string, tcpLayer *layers.TCP) (bool, error) {
@@ -192,6 +234,15 @@ func matchTCPOption(field TCPField, value string, tcpLayer *layers.TCP) (bool, e
 
 // Matches returns whether the trigger matches the packet.
 func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
+	matched, err := t.matches(pkt)
+	if err != nil {
+		return false, err
+	}
+
+	return t.gas.allow(matched), nil
+}
+
+func (t *TCPTrigger) matches(pkt gopacket.Packet) (bool, error) {
 	tcpLayer, ok := pkt.TransportLayer().(*layers.TCP)
 	if !ok || tcpLayer == nil {
 		return false, nil
@@ -248,8 +299,65 @@ func (t *TCPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 	return false, fmt.Errorf("TCPTrigger.Matches(%s) is unimplemented", t.Field())
 }
 
+func (t *TCPTrigger) validate() error {
+	if t == nil {
+		return fmt.Errorf("TCP trigger is nil")
+	}
+
+	switch t.field {
+	case TCPFieldFlags:
+		flags := strings.TrimSuffix(t.value, "*")
+		if flags == "" {
+			return fmt.Errorf("TCP flags value is empty")
+		}
+		for _, flag := range flags {
+			if !strings.ContainsRune("FSRPAUECN", flag) {
+				return fmt.Errorf("unknown TCP flag %q", flag)
+			}
+		}
+		return nil
+	case TCPFieldPayload:
+		return nil
+	case TCPFieldOptionEOL, TCPFieldOptionNOP, TCPFieldOptionMSS, TCPFieldOptionWScale,
+		TCPFieldOptionSackOk, TCPFieldOptionSack, TCPFieldOptionTimestamp,
+		TCPFieldOptionAltChecksum, TCPFieldOptionAltChecksumOpt, TCPFieldOptionMD5Header,
+		TCPFieldOptionUTO:
+		return nil
+	}
+
+	value, err := strconv.ParseUint(t.value, 0, 32)
+	if err != nil {
+		return fmt.Errorf("invalid value %q for TCP field %q: %w", t.value, t.Field(), err)
+	}
+	if (t.field == TCPFieldSourcePort || t.field == TCPFieldDestPort) && value > math.MaxUint16 {
+		return fmt.Errorf("value %d for TCP field %q exceeds 65535", value, t.Field())
+	}
+
+	return nil
+}
+
 // NewTCPTrigger creates a new TCP trigger.
+//
+// For compatibility with earlier versions of this package, a gas of 0 means the
+// trigger has unlimited gas; it will fire for every matching packet. To create
+// a trigger with zero gas (one that never fires), parse "[TCP:field:value:0]"
+// with ParseTrigger or strategy.ParseStrategy, or call NewTCPTriggerWithGas.
 func NewTCPTrigger(field, value string, gas int) (*TCPTrigger, error) {
+	if gas == 0 {
+		return newTCPTrigger(field, value, nil)
+	}
+
+	return newTCPTrigger(field, value, &gas)
+}
+
+// NewTCPTriggerWithGas creates a new TCP trigger whose gas is interpreted exactly as given:
+// positive gas fires for that many matching packets, zero never fires, and negative gas is a
+// bomb that fires indefinitely after suppressing -gas matches.
+func NewTCPTriggerWithGas(field, value string, gas int) (*TCPTrigger, error) {
+	return newTCPTrigger(field, value, &gas)
+}
+
+func newTCPTrigger(field, value string, gas *int) (*TCPTrigger, error) {
 	if field == "" {
 		return nil, fmt.Errorf("cannot create TCP trigger with empty field")
 	}
@@ -263,5 +371,10 @@ func NewTCPTrigger(field, value string, gas int) (*TCPTrigger, error) {
 		value = strings.ToUpper(value)
 	}
 
-	return &TCPTrigger{f, value, gas}, nil
+	trigger := &TCPTrigger{field: f, value: value, gas: newTriggerGas(gas)}
+	if err := trigger.validate(); err != nil {
+		return nil, fmt.Errorf("failed to create trigger: %w", err)
+	}
+
+	return trigger, nil
 }

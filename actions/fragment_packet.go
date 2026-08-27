@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 
 	"github.com/getlantern/geneva/common"
 	"github.com/getlantern/geneva/internal"
@@ -63,7 +63,7 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 		// Note: the original Geneva code only fragments IPv4, not IPv6.
 		packets, err = FragmentIPPacket(packet, a.FragSize)
 	case layers.LayerTypeTCP:
-		packets, err = fragmentTCPSegment(packet, a.FragSize)
+		packets, err = fragmentTCPSegment(packet, a.FragSize, a.overlap)
 	default:
 		// TODO: should we log this?
 		packets, err = duplicate(packet)
@@ -72,8 +72,11 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to fragment: %w", err)
 	}
+	if len(packets) != 2 {
+		return nil, fmt.Errorf("fragment action produced %d packets; expected 2", len(packets))
+	}
 
-	if len(packets) == 2 && !a.InOrder {
+	if !a.InOrder {
 		packets = []gopacket.Packet{packets[1], packets[0]}
 	}
 
@@ -88,10 +91,10 @@ func (a *FragmentAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error
 	return append(lpackets, rpackets...), nil
 }
 
-func fragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, error) {
+func fragmentTCPSegment(packet gopacket.Packet, fragSize, overlap int) ([]gopacket.Packet, error) {
 	// XXX: the original Geneva code does not seem to handle TCP segmentation for IPv6 packets,
 	// so we don't either for now.
-	if packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {
+	if packet.NetworkLayer() == nil || packet.NetworkLayer().LayerType() != layers.LayerTypeIPv4 {
 		return duplicate(packet)
 	}
 
@@ -107,15 +110,17 @@ func fragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet
 		return duplicate(packet)
 	}
 
+	// Note on fragSize semantics: TCP fragments are counted in *bytes*, unlike IP fragments
+	// which count 8-byte blocks. Canonical Geneva (upstream tcp_segment) therefore keeps
+	// fragSize == 0 intact here and emits a header-only first segment followed by a
+	// full-payload second segment at the original sequence number. The IP path treats zero
+	// as unsplittable because a zero-block fragment carries no data at all.
 	if fragSize == -1 || fragSize > tcpPayloadLen-1 {
 		fragSize = tcpPayloadLen / 2
 	}
 
-	// XXX: upstream Geneva supports "overlap bytes"; i.e., taking the first few bytes of the
-	// second fragment and tacking them onto the end of the first fragment. It's not mentioned
-	// in the original paper. We don't do this right now, but could later.
-
 	headersLen := len(packet.Data()) - tcpPayloadLen
+	overlap = min(overlap, tcpPayloadLen-fragSize)
 
 	// Strangely, all the manual bit-banging below was easier than dealing with creating packets
 	// using gopacket.
@@ -133,7 +138,7 @@ func fragmentTCPSegment(packet gopacket.Packet, fragSize int) ([]gopacket.Packet
 	}
 
 	// create the first fragment.
-	f1Len := headersLen + fragSize
+	f1Len := headersLen + fragSize + overlap
 	buf := make([]byte, f1Len)
 	copy(buf, packet.Data()[:f1Len])
 
@@ -186,13 +191,16 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 		return duplicate(packet)
 	}
 
-	if fragSize == -1 || (fragSize*8)%8 > plen || plen <= 8 {
+	// Canonical Geneva clamps an oversized or unsplittable offset to the payload's midpoint
+	// (upstream ip_fragment: fragsize == -1 || fragsize*8 > len(load) || len(load) <= 8).
+	if fragSize == -1 || fragSize*8 > plen || plen <= 8 {
 		fragSize = plen / 2 / 8
 	}
 
-	// corner case: if fragSize is 0, just return the original packet.
-	if fragSize == 0 {
-		return []gopacket.Packet{packet}, nil
+	// A fragment action is branching, so an unsplittable packet becomes two
+	// independent copies just like canonical Geneva.
+	if fragSize <= 0 {
+		return duplicate(packet)
 	}
 
 	// from this point on we can assume that the IP payload is _at least_ (fragSize*8) bytes
@@ -215,7 +223,9 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 	ipv4Buf := buf[ofs:]
 
 	hdrLen := uint16((ipv4Buf[0] & 0x0f) * 4)
-	payloadLen := binary.BigEndian.Uint16(ipv4Buf[2:]) - hdrLen
+	// Use the actual on-the-wire payload size rather than the header's Total Length so that
+	// malformed or trailing-padded packets cannot underflow the second fragment's length.
+	payloadLen := uint16(plen)
 
 	// fix up the fragment size to a multiple of 8 to satisfy fragment offset value
 	offset := uint16((fragSize * 8))
@@ -223,9 +233,13 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 	// update the total length of the first fragmented packet
 	binary.BigEndian.PutUint16(ipv4Buf[2:], hdrLen+offset)
 
-	// set the More Fragments bit, and make the fragment offset 0
-	flagsAndFrags := (binary.BigEndian.Uint16(ipv4Buf[6:]) | 0x20) & 0xe0
-	binary.LittleEndian.PutUint16(ipv4Buf[6:], flagsAndFrags)
+	// Set the More Fragments bit and make the fragment offset zero, preserving the evil
+	// (0x8000) and Don't Fragment (0x4000) bits. The flags/offset word is big-endian on the
+	// wire; the previous little-endian write here corrupted the flag bits whenever the
+	// original fragment offset had low bits set.
+	flagsAndFrags := binary.BigEndian.Uint16(ipv4Buf[6:])
+	flagsAndFrags = (flagsAndFrags | 0x2000) & 0xe000
+	binary.BigEndian.PutUint16(ipv4Buf[6:], flagsAndFrags)
 
 	// slice off everything past the first fragment's end
 	buf = buf[:uint16(ofs)+hdrLen+offset]
@@ -247,8 +261,9 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 	// fix up the length
 	binary.BigEndian.PutUint16(ipv4Buf[2:], hdrLen+payloadLen-offset)
 
-	// clear the MF bit and set the fragment offset appropriately
-	flagsAndFrags = (binary.BigEndian.Uint16(ipv4Buf[6:]) & 0x40) + uint16(fragSize)
+	// Clear the More Fragments bit and the fragment offset, preserving the evil and
+	// Don't Fragment bits, then encode the offset for this fragment (in 8-byte units).
+	flagsAndFrags = (binary.BigEndian.Uint16(ipv4Buf[6:]) & 0xc000) + uint16(fragSize)
 	binary.BigEndian.PutUint16(ipv4Buf[6:], flagsAndFrags)
 
 	second := gopacket.NewPacket(buf, packet.Layers()[0].LayerType(), gopacket.NoCopy)
@@ -296,8 +311,49 @@ func (a *FragmentAction) String() string {
 		actStr = fmt.Sprintf("(%s,%s)", actions[0], actions[1])
 	}
 
-	return fmt.Sprintf("fragment{%s:%d:%t}%s",
-		a.Proto(), a.FragSize, a.InOrder, actStr)
+	overlap := ""
+	if a.overlap > 0 {
+		overlap = fmt.Sprintf(":%d", a.overlap)
+	}
+
+	return fmt.Sprintf("fragment{%s:%d:%t%s}%s",
+		a.Proto(), a.FragSize, a.InOrder, overlap, actStr)
+}
+
+// Overlap returns the number of bytes shared by both TCP segments.
+func (a *FragmentAction) Overlap() int {
+	return a.overlap
+}
+
+// NewFragmentAction creates a supported IPv4 or TCP fragment action.
+func NewFragmentAction(proto string, fragSize int, inOrder bool, overlap int, first, second Action) (*FragmentAction, error) {
+	if fragSize < -1 {
+		return nil, fmt.Errorf("invalid fragment size %d", fragSize)
+	}
+	if overlap < 0 {
+		return nil, fmt.Errorf("invalid fragment overlap %d", overlap)
+	}
+	if first == nil || second == nil {
+		return nil, errors.New("fragment actions must have two children")
+	}
+
+	action := &FragmentAction{
+		FragSize:             fragSize,
+		InOrder:              inOrder,
+		overlap:              overlap,
+		FirstFragmentAction:  first,
+		SecondFragmentAction: second,
+	}
+	switch strings.ToUpper(proto) {
+	case "IP":
+		action.proto = layers.LayerTypeIPv4
+	case "TCP":
+		action.proto = layers.LayerTypeTCP
+	default:
+		return nil, fmt.Errorf("unsupported fragment protocol %q", proto)
+	}
+
+	return action, nil
 }
 
 // ParseFragmentAction parses a string representation of a "fragment" action.
@@ -324,18 +380,10 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 		)
 	}
 
-	action := &FragmentAction{}
-
-	switch strings.ToLower(fields[0]) {
-	case "ip":
-		action.proto = layers.LayerTypeIPv4
-	case "tcp":
-		action.proto = layers.LayerTypeTCP
-	case "udp":
-		action.proto = layers.LayerTypeUDP
-	default:
+	proto := strings.ToUpper(fields[0])
+	if proto != "IP" && proto != "TCP" {
 		return nil, fmt.Errorf(
-			"invalid fragment rule: %q is not a recognized protocol",
+			"invalid fragment rule: %q is not a supported protocol",
 			fields[0],
 		)
 	}
@@ -345,17 +393,19 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 		return nil, fmt.Errorf("invalid fragment rule: %q is not a valid offset", fields[1])
 	}
 
-	action.FragSize = int(ofs)
+	fragSize := int(ofs)
 
-	if action.InOrder, err = strconv.ParseBool(fields[2]); err != nil {
+	inOrder, err := strconv.ParseBool(fields[2])
+	if err != nil {
 		return nil, fmt.Errorf(
 			"invalid fragment rule: %q is not a valid boolean",
 			fields[2],
 		)
 	}
 
+	overlap := 0
 	if len(fields) == 4 {
-		overlap, err := strconv.ParseInt(fields[3], 10, 16)
+		parsedOverlap, err := strconv.ParseInt(fields[3], 10, 16)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid fragment rule: %q is not a valid overlap",
@@ -363,13 +413,21 @@ func ParseFragmentAction(s *scanner.Scanner) (Action, error) {
 			)
 		}
 
-		action.overlap = int(overlap)
+		if parsedOverlap < 0 {
+			return nil, fmt.Errorf("invalid fragment rule: overlap must not be negative")
+		}
+
+		overlap = int(parsedOverlap)
+	} else if len(fields) > 4 {
+		return nil, fmt.Errorf("invalid fragment rule: too many fields")
+	}
+
+	action, err := NewFragmentAction(proto, fragSize, inOrder, overlap, DefaultSendAction, DefaultSendAction)
+	if err != nil {
+		return nil, fmt.Errorf("invalid fragment rule: %w", err)
 	}
 
 	if _, err = s.Expect("("); err != nil {
-		action.FirstFragmentAction = &SendAction{}
-		action.SecondFragmentAction = &SendAction{}
-
 		return action, nil //nolint:nilerr
 	}
 

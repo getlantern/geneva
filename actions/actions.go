@@ -7,14 +7,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/gopacket"
+	"github.com/gopacket/gopacket"
 
 	"github.com/getlantern/geneva/internal"
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/getlantern/geneva/triggers"
 
 	// gopacket best practice says import this, too.
-	_ "github.com/google/gopacket/layers"
+	_ "github.com/gopacket/gopacket/layers"
 )
 
 var ErrInvalidAction = errors.New("invalid action")
@@ -33,6 +33,10 @@ type ActionTree struct {
 
 // String returns a string representation of this ActionTree.
 func (at *ActionTree) String() string {
+	if at.RootAction == nil {
+		return fmt.Sprintf("%s-|", at.Trigger)
+	}
+
 	return fmt.Sprintf("%s-%s-|", at.Trigger, at.RootAction)
 }
 
@@ -48,7 +52,14 @@ func (at *ActionTree) Matches(packet gopacket.Packet) (bool, error) {
 
 // Apply applies this action tree to the packet, returning zero or more potentially-modified
 // packets.
+//
+// A tree with no root action (e.g. "[TCP:flags:A]-|") is a passthrough: it returns the packet
+// unharmed.
 func (at *ActionTree) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
+	if at.RootAction == nil {
+		return []gopacket.Packet{packet}, nil
+	}
+
 	r, err := at.RootAction.Apply(packet)
 	if err != nil {
 		return r, fmt.Errorf("apply failed: %w", err)
@@ -71,6 +82,19 @@ func ParseActionTree(s *scanner.Scanner) (*ActionTree, error) {
 			"unexpected token in action tree: %w",
 			internal.EOFUnexpected(err),
 		)
+	}
+
+	// An action is optional: canonical Geneva allows trigger-only passthrough trees such as
+	// "[TCP:flags:A]-|". If the next token is the terminating "-|", there is no action.
+	if s.FindToken("|", true) {
+		if err := s.Advance(1); err != nil {
+			return nil, fmt.Errorf(
+				"unexpected token in action tree: %w",
+				internal.EOFUnexpected(err),
+			)
+		}
+
+		return at, nil
 	}
 
 	at.RootAction, err = ParseAction(s)

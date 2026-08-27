@@ -14,9 +14,11 @@ Forest : Forest ActionTree
        | empty
        ;
 
-ActionTree : Trigger "-" Action "-|" ;
+ActionTree : Trigger "-" [ Action ] "-|" ;
 
-Trigger : "[" Proto ":" field ":" value "]" ;
+Trigger : "[" Proto ":" field ":" value [ ":" gas ] "]" ;
+
+gas : _number ;
 
 Proto : "IP"
       | "ip"
@@ -40,7 +42,9 @@ Fragment : "fragment" FragmentRule
          | "fragment" FragmentRule "(" Action "," Action ")"
          ;
 
-FragmentRule : "{" Proto ":" offset ":" InOrder "}"
+FragmentRule : "{" Proto ":" offset ":" InOrder [ ":" overlap ] "}"
+
+overlap : _number ;
 
 InOrder : "True"
         | "False"

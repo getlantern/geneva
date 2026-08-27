@@ -4,7 +4,7 @@ package common
 import (
 	"encoding/binary"
 
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket/layers"
 )
 
 // UpdateTCPChecksum updates the TCP checksum field and the raw bytes for a gopacket TCP layer.

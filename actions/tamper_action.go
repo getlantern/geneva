@@ -366,9 +366,6 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 	if tcpFieldIsOption(a.field) {
 		updateTCPDataOffset(tcp)
 	}
-	if a.field != TCPFieldChecksum {
-		common.UpdateTCPChecksum(tcp)
-	}
 
 	ip, _ := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	if ip != nil {
@@ -376,6 +373,11 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 			updateIPv4LengthForTCP(ip, tcp)
 		}
 		common.UpdateIPv4Checksum(ip)
+	}
+
+	// A deliberately corrupted checksum is left untouched.
+	if a.field != TCPFieldChecksum {
+		common.UpdateTCPChecksum(tcp, ip)
 	}
 
 	// Stop at TCP and serialize its current payload. This also preserves
@@ -646,10 +648,7 @@ func (a *IPv4TamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, err
 
 	if (a.field == IPv4FieldSrcIP || a.field == IPv4FieldDstIP) && packet.TransportLayer() != nil {
 		if tcp, ok := packet.TransportLayer().(*layers.TCP); ok {
-			if err := tcp.SetNetworkLayerForChecksum(ip); err != nil {
-				return nil, fmt.Errorf("failed to update TCP checksum network layer: %w", err)
-			}
-			common.UpdateTCPChecksum(tcp)
+			common.UpdateTCPChecksum(tcp, ip)
 		}
 	}
 

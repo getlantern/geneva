@@ -280,7 +280,8 @@ func updateChecksums(packet gopacket.Packet) {
 	}
 
 	if tcp, _ := packet.Layer(layers.LayerTypeTCP).(*layers.TCP); tcp != nil {
-		common.UpdateTCPChecksum(tcp)
+		ipv4, _ := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
+		common.UpdateTCPChecksum(tcp, ipv4)
 	}
 }
 

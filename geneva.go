@@ -2,7 +2,7 @@
 // the Geneva project.
 //
 // Geneva is both a method to describe ways of manipulating packets to attempt to circumvent
-// censorship, and a genetic algoritmm (GENetic EVAsion) that one can deploy to discover new
+// censorship, and a genetic algorithm (GENetic EVAsion) that one can deploy to discover new
 // circumventions. The building blocks of that genetic algorithm—the strategy mutation and
 // crossover operators—are implemented by the adjacent "mutate" package; the full evolution loop
 // (population management, fitness evaluation, and selection) is left to callers. More broadly, one

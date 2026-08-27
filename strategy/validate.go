@@ -93,6 +93,13 @@ func validateAction(action actions.Action, direction Direction, depth int, count
 		return nil
 	}
 
+	// Reject unsupported implementations before the cycle-detection map, which uses the
+	// action as a key: a non-comparable Action implementation would panic ("hash of
+	// unhashable type") instead of returning the intended invalid-strategy error.
+	if !isSupportedBranchingAction(action) {
+		return fmt.Errorf("unsupported action type %T", action)
+	}
+
 	if active[action] {
 		return errors.New("action graph contains a cycle")
 	}
@@ -166,4 +173,15 @@ func validateAction(action actions.Action, direction Direction, depth int, count
 	}
 
 	return nil
+}
+
+// isSupportedBranchingAction reports whether action is a composite implementation that the
+// validator knows how to recurse into. Terminal types (send, drop) are handled above.
+func isSupportedBranchingAction(action actions.Action) bool {
+	switch action.(type) {
+	case *actions.DuplicateAction, *actions.FragmentAction,
+		*actions.TCPTamperAction, *actions.IPv4TamperAction:
+		return true
+	}
+	return false
 }

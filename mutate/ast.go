@@ -138,7 +138,8 @@ func (g *Generator) randomTrigger() (triggers.Trigger, error) {
 	}
 	dna := values[g.random.IntN(len(values))]
 	if g.random.Float64() < 0.20 {
-		dna += fmt.Sprintf(":%d", g.random.IntN(5))
+		// Gas 0 would produce a trigger that can never fire; generate 1 through 5.
+		dna += fmt.Sprintf(":%d", 1+g.random.IntN(5))
 	}
 
 	trigger, err := triggers.ParseTrigger(scanner.NewScanner("[" + dna + "]"))

@@ -42,6 +42,9 @@ func TestValidateRejectsInvalidASTs(t *testing.T) {
 		},
 		{name: "action cycle", strategy: &strategy.Strategy{Outbound: strategy.Forest{validTree(cycle)}}},
 		{name: "unsupported action", strategy: &strategy.Strategy{Outbound: strategy.Forest{validTree(unknownAction{})}}},
+		// uncomparableAction is passed by value and contains a slice, so it cannot be used
+		// as a map key. Validate must return an error rather than panic.
+		{name: "uncomparable action", strategy: &strategy.Strategy{Outbound: strategy.Forest{validTree(uncomparableAction{})}}},
 		{name: "unconfigured fragment", strategy: &strategy.Strategy{Outbound: strategy.Forest{validTree(&actions.FragmentAction{})}}},
 	}
 
@@ -98,3 +101,12 @@ type unknownAction struct{}
 
 func (unknownAction) Apply(gopacket.Packet) ([]gopacket.Packet, error) { return nil, nil }
 func (unknownAction) String() string                                   { return "unknown" }
+
+// uncomparableAction is a non-pointer struct containing a slice, making the Action interface
+// value it produces non-comparable and therefore unusable as a map key.
+type uncomparableAction struct {
+	payload []int //nolint:unused // present specifically to make the struct non-comparable
+}
+
+func (uncomparableAction) Apply(gopacket.Packet) ([]gopacket.Packet, error) { return nil, nil }
+func (uncomparableAction) String() string                                   { return "uncomparable" }

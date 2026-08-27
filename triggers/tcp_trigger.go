@@ -193,6 +193,21 @@ func matchField(value string, tcpLayer *layers.TCP) bool {
 	return actual == wanted
 }
 
+// isTCPOptionField reports whether field refers to a TCP header option rather than a
+// fixed TCP header field or the payload.
+func isTCPOptionField(field TCPField) bool {
+	switch field {
+	case TCPFieldOptionEOL, TCPFieldOptionNOP, TCPFieldOptionMSS, TCPFieldOptionWScale,
+		TCPFieldOptionSackOk, TCPFieldOptionSack, TCPFieldOptionTimestamp,
+		TCPFieldOptionAltChecksum, TCPFieldOptionAltChecksumOpt, TCPFieldOptionMD5Header,
+		TCPFieldOptionUTO:
+		return true
+	default:
+		return false
+	}
+}
+
+// matchTCPOption compares a TCP header option's data against value.
 func matchTCPOption(field TCPField, value string, tcpLayer *layers.TCP) (bool, error) {
 	var optKind layers.TCPOptionKind
 
@@ -302,6 +317,15 @@ func (t *TCPTrigger) matches(pkt gopacket.Packet) (bool, error) {
 func (t *TCPTrigger) validate() error {
 	if t == nil {
 		return fmt.Errorf("TCP trigger is nil")
+	}
+
+	// An empty value is only meaningful where it denotes "no data": "[tcp:load:]" triggers
+	// on packets with no payload, and data-less options such as sackok carry no option data
+	// either (canonical Geneva ships strategies like "[tcp:options-sackok:]"). For any other
+	// field an empty value would be a permanently dead trigger, so reject it explicitly
+	// rather than letting it fail later with a confusing parse error (or silently never fire).
+	if t.value == "" && t.field != TCPFieldPayload && !isTCPOptionField(t.field) {
+		return fmt.Errorf("TCP field %q has an empty trigger value", t.Field())
 	}
 
 	switch t.field {

@@ -74,6 +74,11 @@
 // "[TCP:flags:S:0]" never fires. Negative gas is a "bomb": "[TCP:flags:S:-2]" suppresses its first
 // two matches and then matches every subsequent packet indefinitely.
 //
+// An empty trigger value is only valid where it denotes "no data": "[TCP:load:]" matches packets
+// with no payload, and data-less options such as "[TCP:options-sackok:]" match their option
+// whenever it is present. Empty values on all other fields are rejected when parsing or
+// validating, since they could only ever produce a trigger that never fires.
+//
 // # Actions
 //
 // An action simply encodes steps to manipulate a packet. There are a number of actions described in

@@ -67,6 +67,10 @@ back into subset matching, append a `*`: `[TCP:flags:A*]` fires for any segment 
 
 Triggers may include a fourth, integer gas field. Positive gas bounds how many matching packets can fire the tree,
 zero disables it, and negative gas is a bomb that starts firing after that many matching packets. For example,
+
+An empty trigger value is only valid where it denotes "no data": `[TCP:load:]` matches packets with no payload, and
+data-less options such as `[TCP:options-sackok:]` match their option whenever present. Empty values on all other
+fields are rejected when parsing or validating, since they could only ever produce a trigger that never fires.
 `[TCP:flags:S:2]` fires twice, while `[TCP:flags:S:-2]` suppresses two matches and fires from the third onward.
 
 ## Actions

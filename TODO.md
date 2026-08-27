@@ -6,4 +6,7 @@
 - [x] Feed parsed/validated strategies back in to make sure they're correct
 - [x] Handle frag offset of -1
 - [x] Revisit some assumptions about packet layout in fragment action
-- [ ] Deal with triggers that have empty values
+- [x] Deal with triggers that have empty values (empty values are only valid where they denote
+  "no data" — `[TCP:load:]` matches packets with no payload and data-less options like
+  `[TCP:options-sackok:]` match their option when present; empty values elsewhere are rejected
+  with a clear error)

@@ -172,6 +172,14 @@ func (t *IPTrigger) validate() error {
 		return fmt.Errorf("IP trigger is nil")
 	}
 
+	// An empty value is only meaningful for the payload field: canonical Geneva's
+	// "[ip:load:]" triggers on datagrams with no payload at all. For every other field an
+	// empty value would be a permanently dead trigger, so reject it explicitly rather than
+	// letting it fail later with a confusing parse error (or silently never fire).
+	if t.value == "" && t.field != IPFieldPayload {
+		return fmt.Errorf("IP field %q has an empty trigger value", t.Field())
+	}
+
 	switch t.field {
 	case IPFieldFlags:
 		if t.value == "" {

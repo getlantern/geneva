@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -432,4 +433,71 @@ func TestGasConstructorsDistinguishZero(t *testing.T) {
 	if _, ok := ipUnlimited.GasConfigured(); ok {
 		t.Error("legacy IP trigger with gas 0 should configure unlimited gas")
 	}
+}
+
+// TestEmptyTriggerValues ports canonical Geneva's empty-value handling: "[tcp:load:]" is a
+// meaningful trigger that matches packets with no payload, while an empty value for any other
+// field would be a permanently dead trigger and is rejected explicitly.
+func TestEmptyTriggerValues(t *testing.T) {
+	t.Parallel()
+
+	rejected := []string{
+		"[TCP:flags:]",
+		"[TCP:dport:]",
+		"[TCP:sport:]",
+		"[TCP:seq:]",
+		"[TCP:window:]",
+		"[IP:flags:]",
+		"[IP:ttl:]",
+		"[IP:len:]",
+	}
+	for _, dna := range rejected {
+		trigger, err := triggers.ParseTrigger(scanner.NewScanner(dna))
+		if err == nil {
+			t.Errorf("ParseTrigger(%q) = %s, expected an error for the empty value", dna, trigger)
+			continue
+		}
+		if !strings.Contains(err.Error(), "empty trigger value") {
+			t.Errorf("ParseTrigger(%q) error %q should mention the empty trigger value", dna, err)
+		}
+	}
+
+	accepted := []string{
+		"[TCP:load:]",
+		"[IP:load:]",
+		// Data-less options legitimately have empty values; canonical Geneva ships
+		// strategies like "[tcp:options-sackok:]".
+		"[TCP:options-sackok:]",
+		"[TCP:options-sack::4]",
+	}
+	for _, dna := range accepted {
+		if _, err := triggers.ParseTrigger(scanner.NewScanner(dna)); err != nil {
+			t.Errorf("ParseTrigger(%q) got an error: %v; empty payload values are valid", dna, err)
+		}
+	}
+
+	loadTrigger, err := triggers.NewTCPTrigger("load", "", 0)
+	if err != nil {
+		t.Fatalf("NewTCPTrigger(load, \"\") got an error: %v", err)
+	}
+
+	if matched, err := loadTrigger.Matches(tcpPacket(0x10)); err != nil || !matched {
+		t.Errorf("[TCP:load:] should match a packet with no payload (matched=%t, err=%v)", matched, err)
+	}
+	if matched, err := loadTrigger.Matches(tcpPacketWithPayload("hello")); err != nil || matched {
+		t.Errorf("[TCP:load:] should not match a packet with a payload (matched=%t, err=%v)", matched, err)
+	}
+}
+
+// tcpPacketWithPayload returns a TCP packet carrying the given ASCII payload.
+func tcpPacketWithPayload(payload string) gopacket.Packet {
+	base := tcpPacket(0x10).Data()
+	data := make([]byte, len(base), len(base)+len(payload))
+	copy(data, base)
+	data = append(data, []byte(payload)...)
+
+	// The TCP header ends at offset 40 (20 bytes IP + 20 bytes TCP); bump Total Length.
+	binary.BigEndian.PutUint16(data[2:4], uint16(len(data)))
+
+	return gopacket.NewPacket(data, layers.LayerTypeIPv4, gopacket.Default)
 }

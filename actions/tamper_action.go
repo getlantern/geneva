@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -277,8 +278,8 @@ type TCPTamperAction struct {
 	TamperAction
 	// field is the TCP field to modify.
 	field TCPField
-	// valueGen is the value generator to use when modifying the field.
-	valueGen tamperValueGen
+	// values produces the value to modify the field with.
+	values tamperValues
 }
 
 // NewTCPTamperAction returns a new TCPTamperAction from the given TamperAction.
@@ -293,14 +294,14 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 		return &TCPTamperAction{
 			TamperAction: ta,
 			field:        field,
-			valueGen:     newTamperCorruptGen(),
+			values:       tamperValues{corrupt: true},
 		}, nil
 	case TamperReplace:
-		gen := &tamperReplaceGen{}
+		values := tamperValues{}
 
 		switch {
 		case field == TCPFieldFlags:
-			gen.vUint = tcpFlagsToUint32(ta.NewValue)
+			values.vUint = tcpFlagsToUint32(ta.NewValue)
 		case field < TCPFieldSrcPort:
 			// if field is an option, we need to convert the value to a byte slice
 			var b []byte
@@ -312,9 +313,9 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 				b = []byte(ta.NewValue)
 			}
 
-			gen.vBytes = b
+			values.vBytes = b
 		case field == TCPLoad:
-			gen.vBytes = []byte(ta.NewValue)
+			values.vBytes = []byte(ta.NewValue)
 		default:
 			var (
 				val uint64
@@ -332,13 +333,13 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 				}
 			}
 
-			gen.vUint = uint32(val)
+			values.vUint = uint32(val)
 		}
 
 		return &TCPTamperAction{
 			TamperAction: ta,
 			field:        field,
-			valueGen:     gen,
+			values:       values,
 		}, nil
 	}
 
@@ -352,7 +353,7 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 		return nil, errors.New("packet does not have a TCP layer")
 	}
 
-	if err := tamperTCP(tcp, a.field, a.valueGen); err != nil {
+	if err := tamperTCP(tcp, a.field, a.values); err != nil {
 		return nil, fmt.Errorf("failed to serialize tampered TCP header: %w", err)
 	}
 
@@ -388,28 +389,28 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 }
 
 // tamperTCP modifies the given TCP field using the given value generator.
-func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) error {
+func tamperTCP(tcp *layers.TCP, field TCPField, values tamperValues) error {
 	switch field {
 	case TCPFieldSrcPort:
-		tcp.SrcPort = layers.TCPPort(valueGen.uint(16))
+		tcp.SrcPort = layers.TCPPort(values.uint(16))
 	case TCPFieldDstPort:
-		tcp.DstPort = layers.TCPPort(valueGen.uint(16))
+		tcp.DstPort = layers.TCPPort(values.uint(16))
 	case TCPFieldSeq:
-		tcp.Seq = valueGen.uint(32)
+		tcp.Seq = values.uint(32)
 	case TCPFieldAck:
-		tcp.Ack = valueGen.uint(32)
+		tcp.Ack = values.uint(32)
 	case TCPFieldDataOff:
-		tcp.DataOffset = uint8(valueGen.uint(8))
+		tcp.DataOffset = uint8(values.uint(8))
 	case TCPFieldWindow:
-		tcp.Window = uint16(valueGen.uint(16))
+		tcp.Window = uint16(values.uint(16))
 	case TCPFieldUrgent:
-		tcp.Urgent = uint16(valueGen.uint(16))
+		tcp.Urgent = uint16(values.uint(16))
 	case TCPFieldChecksum:
-		tcp.Checksum = uint16(valueGen.uint(16))
+		tcp.Checksum = uint16(values.uint(16))
 	case TCPFieldFlags:
-		setTCPFlags(tcp, uint16(valueGen.uint(16)))
+		setTCPFlags(tcp, uint16(values.uint(16)))
 	case TCPLoad:
-		tcp.Payload = valueGen.bytes(1480)
+		tcp.Payload = values.bytes(1480)
 	default:
 		// find option in TCP header
 		var opt *layers.TCPOption
@@ -431,7 +432,7 @@ func tamperTCP(tcp *layers.TCP, field TCPField, valueGen tamperValueGen) error {
 			opt = &tcp.Options[ol-1]
 		}
 
-		opt.OptionData = valueGen.bytes(tcpOptionLengths[field])
+		opt.OptionData = values.bytes(tcpOptionLengths[field])
 		if field == TCPOptionEol || field == TCPOptionNop {
 			opt.OptionLength = 1
 		} else {
@@ -567,8 +568,8 @@ type IPv4TamperAction struct {
 	TamperAction
 	// field is the IPv4 field to modify.
 	field IPv4Field
-	// valueGen is the value generator to use when modifying the field.
-	valueGen tamperValueGen
+	// values produces the value to modify the field with.
+	values tamperValues
 }
 
 // NewIPv4TamperAction returns a new IPv4TamperAction from the given TamperAction.
@@ -583,10 +584,10 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 		return &IPv4TamperAction{
 			TamperAction: ta,
 			field:        field,
-			valueGen:     newTamperCorruptGen(),
+			values:       tamperValues{corrupt: true},
 		}, nil
 	case TamperReplace:
-		gen := &tamperReplaceGen{}
+		values := tamperValues{}
 
 		switch field {
 		case IPv4FieldSrcIP, IPv4FieldDstIP:
@@ -600,9 +601,9 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 				return nil, fmt.Errorf("%w: IPv6 is not supported", ErrInvalidTamperRule)
 			}
 
-			gen.vBytes = ip.To4()
+			values.vBytes = ip.To4()
 		case IPv4Load:
-			gen.vBytes = []byte(ta.NewValue)
+			values.vBytes = []byte(ta.NewValue)
 		default:
 			// parse uint from NewValue
 			val, err := strconv.ParseUint(ta.NewValue, 10, 32)
@@ -610,13 +611,13 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 				return nil, fmt.Errorf("%w: %q is not a valid value for field %q", ErrInvalidTamperRule, ta.NewValue, ta.Field)
 			}
 
-			gen.vUint = uint32(val)
+			values.vUint = uint32(val)
 		}
 
 		return &IPv4TamperAction{
 			TamperAction: ta,
 			field:        field,
-			valueGen:     gen,
+			values:       values,
 		}, nil
 	}
 
@@ -630,7 +631,7 @@ func (a *IPv4TamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, err
 		return nil, errors.New("packet does not have a IPv4 layer")
 	}
 
-	if err := tamperIPv4(ip, a.field, a.valueGen); err != nil {
+	if err := tamperIPv4(ip, a.field, a.values); err != nil {
 		return nil, fmt.Errorf("failed to serialize tampered IPv4 header: %w", err)
 	}
 	if a.field == IPv4Load {
@@ -655,32 +656,32 @@ func (a *IPv4TamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, err
 }
 
 // tamperIPv4 modifies the given IP field using the given value generator.
-func tamperIPv4(ip *layers.IPv4, field IPv4Field, valueGen tamperValueGen) error {
+func tamperIPv4(ip *layers.IPv4, field IPv4Field, values tamperValues) error {
 	switch field {
 	case IPv4FieldSrcIP:
-		ip.SrcIP = valueGen.bytes(4)
+		ip.SrcIP = values.bytes(4)
 	case IPv4FieldDstIP:
-		ip.DstIP = valueGen.bytes(4)
+		ip.DstIP = values.bytes(4)
 	case IPv4FieldVersion:
-		ip.Version = uint8(valueGen.uint(8))
+		ip.Version = uint8(values.uint(8))
 	case IPv4FieldIHL:
-		ip.IHL = uint8(valueGen.uint(8))
+		ip.IHL = uint8(values.uint(8))
 	case IPv4FieldTOS:
-		ip.TOS = uint8(valueGen.uint(8))
+		ip.TOS = uint8(values.uint(8))
 	case IPv4FieldLength:
-		ip.Length = uint16(valueGen.uint(16))
+		ip.Length = uint16(values.uint(16))
 	case IPv4FieldFlags:
 		// not implemented yet. see comment above.
 	case IPv4FieldFragOffset:
-		ip.FragOffset = uint16(valueGen.uint(16))
+		ip.FragOffset = uint16(values.uint(16))
 	case IPv4FieldTTL:
-		ip.TTL = uint8(valueGen.uint(8))
+		ip.TTL = uint8(values.uint(8))
 	case IPv4FieldProtocol:
-		ip.Protocol = layers.IPProtocol(valueGen.uint(8))
+		ip.Protocol = layers.IPProtocol(values.uint(8))
 	case IPv4FieldChecksum:
-		ip.Checksum = uint16(valueGen.uint(16))
+		ip.Checksum = uint16(values.uint(16))
 	case IPv4Load:
-		ip.Payload = valueGen.bytes(1480)
+		ip.Payload = values.bytes(1480)
 	}
 
 	// let gopacket handle converting modified packet into []byte again, it's just easier
@@ -712,72 +713,63 @@ func updateIPv4LengthForTCP(ip *layers.IPv4, tcp *layers.TCP) {
 	setIPv4Length(ip, len(ip.Contents)+len(tcp.Contents)+len(tcp.Payload))
 }
 
-// tamperValueGen is a value generator for tamper actions.
-type tamperValueGen interface {
-	uint(bitSize int) uint32
-	bytes(n int) []byte
+// tamperValues produces the value written into a tampered field: either the fixed values
+// parsed from a replace rule, or — in corrupt mode — a fresh random draw per packet taken
+// from math/rand/v2's concurrency-safe global source. A parsed strategy is shared by all
+// packet-processing goroutines, so the global source avoids any per-instance locking.
+type tamperValues struct {
+	// corrupt enables corrupt mode, drawing random values instead of using the fixed ones.
+	corrupt bool
+	vUint   uint32
+	vBytes  []byte
 }
 
-// tamperReplaceGen just returns newValue casted to the appropriate type.
-// it assumes that newValue is the correct type.
-type tamperReplaceGen struct {
-	vUint  uint32
-	vBytes []byte
+// uint returns the value to write: the fixed replace value, or in corrupt mode a uniformly
+// random value of the given bit size. Every value in [0, 2^bitSize-1] is reachable,
+// including the field's true maximum, on both 64-bit and 32-bit platforms.
+func (v tamperValues) uint(bitSize int) uint32 {
+	if v.corrupt {
+		switch {
+		case bitSize <= 0:
+			return 0
+		case bitSize >= 32:
+			return rand.Uint32()
+		default:
+			return rand.Uint32() & ((uint32(1) << uint(bitSize)) - 1)
+		}
+	}
+
+	return v.vUint
 }
 
-// uint returns the uint value. bitSize is ignored.
-func (g *tamperReplaceGen) uint(_ int) uint32 {
-	return g.vUint
-}
+// bytes returns the value to write: a copy of the fixed replace value (or an empty slice if
+// n == 0), or in corrupt mode a random byte slice of length n — of random length up to n
+// when n > 20.
+func (v tamperValues) bytes(n int) []byte {
+	if v.corrupt {
+		if n > 20 {
+			n = rand.IntN(n)
+		}
 
-// bytes returns the byte slice or an empty byte slice if n == 0.
-func (g *tamperReplaceGen) bytes(n int) []byte {
+		b := make([]byte, n)
+		i := 0
+		for ; i+8 <= len(b); i += 8 {
+			binary.LittleEndian.PutUint64(b[i:], rand.Uint64())
+		}
+		if i < len(b) {
+			r := rand.Uint64()
+			for ; i < len(b); i++ {
+				b[i] = byte(r)
+				r >>= 8
+			}
+		}
+
+		return b
+	}
+
 	if n == 0 {
 		return []byte{}
 	}
 
-	return append([]byte{}, g.vBytes...)
-}
-
-// tamperCorruptGen generates random values for tamperCorrupt actions using math/rand/v2's
-// concurrency-safe global source. A parsed strategy is shared by all packet-processing
-// goroutines, so it deliberately avoids a per-instance Source (which is not safe for
-// concurrent use) and the locking that sharing one would require.
-type tamperCorruptGen struct{}
-
-// newTamperCorruptGen returns a tamperCorruptGen.
-func newTamperCorruptGen() *tamperCorruptGen { return &tamperCorruptGen{} }
-
-// uint returns a uniformly random value of the given bit size as a uint32. Every value in
-// [0, 2^bitSize-1] is reachable, including the field's true maximum, on both 64-bit and
-// 32-bit platforms.
-func (g *tamperCorruptGen) uint(bitSize int) uint32 {
-	r := rand.Uint32()
-	switch {
-	case bitSize <= 8:
-		return r & 0xff
-	case bitSize <= 16:
-		return r & 0xffff
-	default:
-		return r
-	}
-}
-
-// bytes returns a random byte slice of length n if n <= 20, otherwise it returns a
-// a random byte slice of random length up to n.
-func (g *tamperCorruptGen) bytes(n int) []byte {
-	if n > 20 {
-		n = int(rand.Uint64N(uint64(n)))
-	}
-
-	b := make([]byte, n)
-	for i := 0; i < len(b); {
-		r := rand.Uint64()
-		for shift := 0; shift < 64 && i < len(b); shift += 8 {
-			b[i] = byte(r >> shift)
-			i++
-		}
-	}
-
-	return b
+	return slices.Clone(v.vBytes)
 }

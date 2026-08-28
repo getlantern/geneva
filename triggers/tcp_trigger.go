@@ -279,10 +279,9 @@ func (t *TCPTrigger) matches(pkt gopacket.Packet) (bool, error) {
 		return matchField(t.value, tcpLayer), nil
 	case TCPFieldPayload:
 		return bytes.Equal(tcpLayer.Payload, []byte(t.value)), nil
-	case TCPFieldOptionEOL, TCPFieldOptionNOP, TCPFieldOptionMSS, TCPFieldOptionWScale,
-		TCPFieldOptionSackOk, TCPFieldOptionSack, TCPFieldOptionTimestamp,
-		TCPFieldOptionAltChecksum, TCPFieldOptionAltChecksumOpt, TCPFieldOptionMD5Header,
-		TCPFieldOptionUTO:
+	}
+
+	if isTCPOptionField(t.field) {
 		return matchTCPOption(t.field, t.value, tcpLayer)
 	}
 
@@ -354,10 +353,9 @@ func (t *TCPTrigger) validate() error {
 		return nil
 	case TCPFieldPayload:
 		return nil
-	case TCPFieldOptionEOL, TCPFieldOptionNOP, TCPFieldOptionMSS, TCPFieldOptionWScale,
-		TCPFieldOptionSackOk, TCPFieldOptionSack, TCPFieldOptionTimestamp,
-		TCPFieldOptionAltChecksum, TCPFieldOptionAltChecksumOpt, TCPFieldOptionMD5Header,
-		TCPFieldOptionUTO:
+	}
+
+	if isTCPOptionField(t.field) {
 		return nil
 	}
 

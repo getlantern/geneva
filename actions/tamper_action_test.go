@@ -34,8 +34,8 @@ func TestParseTamperAction(t *testing.T) {
 					Mode:     TamperReplace,
 					Action:   &SendAction{},
 				},
-				field:    TCPFieldDataOff,
-				valueGen: &tamperReplaceGen{vUint: 10},
+				field:  TCPFieldDataOff,
+				values: tamperValues{vUint: 10},
 			},
 			wantErr: false,
 		}, {
@@ -49,8 +49,8 @@ func TestParseTamperAction(t *testing.T) {
 					Mode:     TamperReplace,
 					Action:   &SendAction{},
 				},
-				field:    TCPOptionMss,
-				valueGen: &tamperReplaceGen{vBytes: []byte{0x00, 0x0f}},
+				field:  TCPOptionMss,
+				values: tamperValues{vBytes: []byte{0x00, 0x0f}},
 			},
 			wantErr: false,
 		}, {
@@ -64,8 +64,8 @@ func TestParseTamperAction(t *testing.T) {
 					Mode:     TamperReplace,
 					Action:   &SendAction{},
 				},
-				field:    IPv4FieldTTL,
-				valueGen: &tamperReplaceGen{vUint: 15},
+				field:  IPv4FieldTTL,
+				values: tamperValues{vUint: 15},
 			},
 			wantErr: false,
 		},
@@ -194,9 +194,9 @@ func TestTamperTCP(t *testing.T) {
 	t.Parallel()
 
 	type args struct {
-		tcp      *layers.TCP
-		field    TCPField
-		valueGen tamperValueGen
+		tcp    *layers.TCP
+		field  TCPField
+		values tamperValues
 	}
 
 	//nolint:forcetypeassert
@@ -208,9 +208,9 @@ func TestTamperTCP(t *testing.T) {
 		{
 			name: "tcp tamper replace existing option",
 			args: args{
-				tcp:      testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
-				field:    TCPOptionMss,
-				valueGen: &tamperReplaceGen{vBytes: []byte{0x0f, 0xff}},
+				tcp:    testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
+				field:  TCPOptionMss,
+				values: tamperValues{vBytes: []byte{0x0f, 0xff}},
 			},
 			want: []byte{
 				0x30, 0x39, 0xd4, 0x31, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0x00,
@@ -220,9 +220,9 @@ func TestTamperTCP(t *testing.T) {
 		}, {
 			name: "tcp tamper replace missing option",
 			args: args{
-				tcp:      testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
-				field:    TCPOptionAltCkhsum,
-				valueGen: &tamperReplaceGen{vBytes: []byte{0xff, 0xff, 0xff}},
+				tcp:    testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
+				field:  TCPOptionAltCkhsum,
+				values: tamperValues{vBytes: []byte{0xff, 0xff, 0xff}},
 			},
 			want: []byte{
 				0x30, 0x39, 0xd4, 0x31, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0x00,
@@ -234,7 +234,7 @@ func TestTamperTCP(t *testing.T) {
 			args: args{
 				tcp:   testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
 				field: TCPLoad,
-				valueGen: &tamperReplaceGen{
+				values: tamperValues{
 					vBytes: []byte{
 						0x6d, 0x69, 0x73, 0x73, 0x20, 0x79, 0x6f, 0x75, 0x20, 0x46, 0x61, 0x77, 0x6b, 0x73,
 					},
@@ -252,7 +252,7 @@ func TestTamperTCP(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.NoError(t, tamperTCP(tt.args.tcp, tt.args.field, tt.args.valueGen))
+			assert.NoError(t, tamperTCP(tt.args.tcp, tt.args.field, tt.args.values))
 
 			got := append([]byte{}, tt.args.tcp.Contents...)
 			got = append(got, tt.args.tcp.Payload...)
@@ -273,27 +273,27 @@ func testPkt() gopacket.Packet {
 	return gopacket.NewPacket(tcpBytes, layers.LinkTypeEthernet, gopacket.Default)
 }
 
-// TestTamperCorruptGenFullRange is a regression test: the corrupt generator previously used
+// TestTamperValuesCorruptFullRange is a regression test: the corrupt generator previously used
 // Intn(1<<bitSize-1), which both overflowed on 32-bit builds for bitSize 32 and could never
 // emit the field's maximum value. It must now produce every value in [0, 2^bitSize-1].
-func TestTamperCorruptGenFullRange(t *testing.T) {
+func TestTamperValuesCorruptFullRange(t *testing.T) {
 	t.Parallel()
 
 	const draws = 100000
 
-	g := newTamperCorruptGen()
+	v := tamperValues{corrupt: true}
 	var ones, zeros [32]bool
 	var min, max uint32 = 0xffffffff, 0
 	for range draws {
-		v := g.uint(32)
-		if v < min {
-			min = v
+		got := v.uint(32)
+		if got < min {
+			min = got
 		}
-		if v > max {
-			max = v
+		if got > max {
+			max = got
 		}
 		for b := range ones {
-			if v&(1<<uint(b)) != 0 {
+			if got&(1<<uint(b)) != 0 {
 				ones[b] = true
 			} else {
 				zeros[b] = true
@@ -316,16 +316,26 @@ func TestTamperCorruptGenFullRange(t *testing.T) {
 	if max <= 0xffffffff-(1<<20) {
 		t.Errorf("maximum drawn value = %#x, generator not reaching high values", max)
 	}
+
+	// Sub-word bit sizes must be masked to exactly the requested width.
+	for _, bitSize := range []int{1, 4, 12, 20, 24, 31} {
+		limit := uint32(1) << uint(bitSize)
+		for range 1000 {
+			if got := v.uint(bitSize); got >= limit {
+				t.Fatalf("uint(%d) = %#x, exceeds %#x", bitSize, got, limit-1)
+			}
+		}
+	}
 }
 
-func TestTamperCorruptGenBytes(t *testing.T) {
+func TestTamperValuesCorruptBytes(t *testing.T) {
 	t.Parallel()
 
-	g := newTamperCorruptGen()
+	v := tamperValues{corrupt: true}
 
 	// Lengths up to 20 are honored exactly.
 	for _, n := range []int{0, 1, 8, 20} {
-		if got := len(g.bytes(n)); got != n {
+		if got := len(v.bytes(n)); got != n {
 			t.Errorf("len(bytes(%d)) = %d", n, got)
 		}
 	}
@@ -333,7 +343,7 @@ func TestTamperCorruptGenBytes(t *testing.T) {
 	// Lengths over 20 get a random length in [0, n).
 	var sawShort bool
 	for range 100 {
-		if got := len(g.bytes(64)); got < 64 {
+		if got := len(v.bytes(64)); got < 64 {
 			sawShort = true
 			break
 		}

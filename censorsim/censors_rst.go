@@ -15,6 +15,11 @@ type synSeqState struct {
 // forbidden reports whether pkt is an in-window payload carrying a forbidden keyword, advancing
 // the tracked sequence number as canonical Geneva does.
 func (s *synSeqState) forbidden(pkt gopacket.Packet, forbidden [][]byte) bool {
+	// These censors model IPv4/TCP and build RSTs from the IPv4 header, so ignore any packet
+	// that is not IPv4/TCP rather than triggering (and later dereferencing a nil IPv4 layer).
+	if ipv4Of(pkt) == nil {
+		return false
+	}
 	tcp := tcpOf(pkt)
 	if tcp == nil {
 		return false
@@ -247,13 +252,19 @@ func (c *Censor8b) check(pkt gopacket.Packet) bool {
 	tcb := matchingTCB(c.tcbs, pkt)
 	switch {
 	case tcb == nil && flagsAre(tcp, "S"):
+		var isNew bool
 		if partial := partialTCB(c.tcbs, pkt); partial != nil {
 			tcb = partial
 		} else {
 			tcb = &mtcb{src: srcIP(pkt), dst: dstIP(pkt), sport: uint16(tcp.SrcPort), dport: uint16(tcp.DstPort), seq: tcp.Seq}
+			isNew = true
 		}
 		tcb.seq++ // synchronizing on a SYN
-		c.tcbs = append(c.tcbs, tcb)
+		if isNew {
+			// Reusing an existing TCB is already tracked; appending again would grow the
+			// list with duplicate references without changing lookup behavior.
+			c.tcbs = append(c.tcbs, tcb)
+		}
 		return false
 	case tcb != nil && flagsAre(tcp, "R", "RA"):
 		c.tcbs = removeTCB(c.tcbs, tcb)
@@ -316,11 +327,13 @@ func (c *Censor10) check(pkt gopacket.Packet) bool {
 	tcb := matchingTCB(c.tcbs, pkt)
 	switch {
 	case (tcb != nil && c.resync[tcb.key()]) || (tcb == nil && flagsAre(tcp, "S")):
+		var isNew bool
 		if tcb == nil {
 			tcb = partialTCB(c.tcbs, pkt)
 		}
 		if tcb == nil {
 			tcb = &mtcb{}
+			isNew = true
 		}
 		tcb.src, tcb.dst = srcIP(pkt), dstIP(pkt)
 		tcb.sport, tcb.dport = uint16(tcp.SrcPort), uint16(tcp.DstPort)
@@ -330,7 +343,9 @@ func (c *Censor10) check(pkt gopacket.Packet) bool {
 		} else {
 			tcb.seq += uint32(len(payloadOf(tcp)))
 		}
-		c.tcbs = append(c.tcbs, tcb)
+		if isNew {
+			c.tcbs = append(c.tcbs, tcb)
+		}
 		c.resync[tcb.key()] = false
 		return false
 	case tcb != nil && flagsAre(tcp, "R", "F"):
@@ -395,9 +410,11 @@ func (c *Censor11) check(pkt gopacket.Packet) bool {
 	tcb := matchingTCB(c.tcbs, pkt)
 	switch {
 	case (tcb != nil && c.resync[tcb.key()]) || (tcb == nil && flagsAre(tcp, "S", "A")):
+		var isNew bool
 		tcb = partialTCB(c.tcbs, pkt)
 		if tcb == nil {
 			tcb = &mtcb{}
+			isNew = true
 		}
 		tcb.src, tcb.dst = srcIP(pkt), dstIP(pkt)
 		tcb.sport, tcb.dport = uint16(tcp.SrcPort), uint16(tcp.DstPort)
@@ -407,7 +424,9 @@ func (c *Censor11) check(pkt gopacket.Packet) bool {
 		} else {
 			tcb.seq += uint32(len(payloadOf(tcp)))
 		}
-		c.tcbs = append(c.tcbs, tcb)
+		if isNew {
+			c.tcbs = append(c.tcbs, tcb)
+		}
 		c.resync[tcb.key()] = false
 		return false
 	case tcb != nil && flagsAre(tcp, "R", "F", "RA", "FA"):

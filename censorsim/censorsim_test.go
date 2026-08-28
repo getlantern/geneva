@@ -141,6 +141,29 @@ func runStrategy(t *testing.T, dna string, c Censor, payload []byte) {
 	}
 }
 
+// TestNewValidatesCensorIP checks that the RST-injecting censors require a valid IPv4 CensorIP,
+// while the others do not, and that an unknown name errors.
+func TestNewValidatesCensorIP(t *testing.T) {
+	t.Parallel()
+
+	// No CensorIP configured.
+	bare := Config{Forbidden: DefaultForbidden()}
+
+	for _, name := range []string{"3", "5", "8b", "10", "11"} {
+		if _, err := New(name, bare); err == nil {
+			t.Errorf("New(%q) without CensorIP should error", name)
+		}
+	}
+	for _, name := range []string{"dummy", "1", "2", "4", "6", "7", "8", "9"} {
+		if _, err := New(name, bare); err != nil {
+			t.Errorf("New(%q) without CensorIP should succeed: %v", name, err)
+		}
+	}
+	if _, err := New("nope", testConfig()); err == nil {
+		t.Error("New with an unknown name should error")
+	}
+}
+
 // TestDummyNeverTriggers is the harness sanity check: the dummy censor ignores forbidden content.
 func TestDummyNeverTriggers(t *testing.T) {
 	t.Parallel()
@@ -246,9 +269,15 @@ func TestInjectedRSTsProduced(t *testing.T) {
 
 	payload, _ := forbiddenPayload()
 	var injected int
-	s, _ := strategy.ParseStrategy(`\/`)
+	s, err := strategy.ParseStrategy(`\/`)
+	if err != nil {
+		t.Fatalf("ParseStrategy: %v", err)
+	}
 	for _, item := range stream(t, payload) {
-		out, _ := s.Apply(item.pkt, item.dir)
+		out, err := s.Apply(item.pkt, item.dir)
+		if err != nil {
+			t.Fatalf("Apply (%s): %v", item.dir, err)
+		}
 		for _, p := range out {
 			injected += len(c.Process(p).Injected)
 		}
@@ -274,14 +303,20 @@ func TestChecksumValidationDistinguishes(t *testing.T) {
 
 	payload, _ := forbiddenPayload()
 
-	c8, _ := New("8", testConfig())
+	c8, err := New("8", testConfig())
+	if err != nil {
+		t.Fatalf("New(8): %v", err)
+	}
 	runStrategy(t, dna, c8, payload)
 	if c8.Triggered() {
 		t.Error("censor 8 (checksum-blind) should be evaded by the bad-checksum RST teardown")
 	}
 
 	payload, _ = forbiddenPayload()
-	c10, _ := New("10", testConfig())
+	c10, err := New("10", testConfig())
+	if err != nil {
+		t.Fatalf("New(10): %v", err)
+	}
 	runStrategy(t, dna, c10, payload)
 	if !c10.Triggered() {
 		t.Error("censor 10 (checksum-validating) should ignore the bad-checksum RST and still catch the keyword")

@@ -85,14 +85,24 @@ func DefaultForbidden() [][]byte {
 }
 
 // New constructs a censor by name. Valid names are "dummy", "1".."11", and "8b" (optionally
-// prefixed with "censor", e.g. "censor11").
+// prefixed with "censor", e.g. "censor11"). The RST-injecting censors (3, 5, 8b, 10, 11) require
+// a valid IPv4 Config.CensorIP, since they spoof server-directed RSTs from it.
 func New(name string, cfg Config) (Censor, error) {
-	if c, ok := constructors[normalizeName(name)]; ok {
-		return c(cfg), nil
+	n := normalizeName(name)
+	c, ok := constructors[n]
+	if !ok {
+		return nil, fmt.Errorf("unknown censor %q", name)
 	}
 
-	return nil, fmt.Errorf("unknown censor %q", name)
+	if requiresCensorIP[n] && cfg.CensorIP.To4() == nil {
+		return nil, fmt.Errorf("censor %q requires a valid IPv4 Config.CensorIP", name)
+	}
+
+	return c(cfg), nil
 }
+
+// requiresCensorIP lists the censors that inject server-directed RSTs and therefore need CensorIP.
+var requiresCensorIP = map[string]bool{"3": true, "5": true, "8b": true, "10": true, "11": true}
 
 // Replay feeds packets through a censor in order and returns whether it triggered. It is a
 // convenience wrapper over repeated Process calls for the common "does this strategy evade?"

@@ -2,8 +2,11 @@ package strategy_test
 
 import (
 	"testing"
+	"time"
 
+	"github.com/getlantern/geneva/actions"
 	"github.com/getlantern/geneva/strategy"
+	"github.com/getlantern/geneva/triggers"
 )
 
 // TestSleepStrategyRoundTrips confirms that a sleep action parses and validates in both the
@@ -30,5 +33,28 @@ func TestSleepStrategyRoundTrips(t *testing.T) {
 	}
 	if reparsed.String() != s.String() {
 		t.Fatalf("round-trip mismatch:\n  first: %q\n second: %q", s.String(), reparsed.String())
+	}
+}
+
+// TestSleepNilChildValidates confirms that a sleep with a nil child validates: Apply and String
+// treat a nil child as an elided send, and validation must agree (mutation/crossover can swap in
+// nil passthrough subtrees).
+func TestSleepNilChildValidates(t *testing.T) {
+	t.Parallel()
+
+	trigger, err := triggers.NewTCPTrigger("flags", "A", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := &strategy.Strategy{
+		Outbound: strategy.Forest{{
+			Trigger:    trigger,
+			RootAction: &actions.SleepAction{Duration: time.Second, Action: nil},
+		}},
+	}
+
+	if err := strategy.Validate(s); err != nil {
+		t.Fatalf("Validate() rejected a sleep with a nil child: %v", err)
 	}
 }

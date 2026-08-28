@@ -177,8 +177,14 @@ func validateAction(action actions.Action, direction Direction, depth int, count
 		if typed.Duration < 0 {
 			return fmt.Errorf("sleep duration %s is invalid", typed.Duration)
 		}
-		if err := validateAction(typed.Action, direction, depth+1, count, active); err != nil {
-			return fmt.Errorf("sleep child: %w", err)
+		// A nil child is an elided send (see SleepAction.Apply and String), so there is
+		// nothing to recurse into; validate only a child that is actually present. This
+		// also keeps mutation/crossover, which can swap in nil passthrough subtrees,
+		// from producing a strategy that validation rejects but Apply accepts.
+		if typed.Action != nil {
+			if err := validateAction(typed.Action, direction, depth+1, count, active); err != nil {
+				return fmt.Errorf("sleep child: %w", err)
+			}
 		}
 	default:
 		return fmt.Errorf("unsupported action type %T", action)

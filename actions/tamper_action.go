@@ -4,11 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"strconv"
 	"strings"
-	"sync/atomic"
-	"time"
 
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
@@ -740,56 +739,27 @@ func (g *tamperReplaceGen) bytes(n int) []byte {
 	return append([]byte{}, g.vBytes...)
 }
 
-// tamperCorruptGen generates random values for tamperCorrupt actions.
-//
-// A parsed strategy is shared by all packets flowing through it, so the generator must be
-// safe for concurrent use. Rather than taking a mutex on every packet, each draw atomically
-// advances a counter and feeds it through the SplitMix64 finalizer; the result is a
-// lock-free generator with a well-distributed full-range 64-bit output and no allocations
-// on the uint path.
-type tamperCorruptGen struct {
-	state atomic.Uint64
-}
+// tamperCorruptGen generates random values for tamperCorrupt actions using math/rand/v2's
+// concurrency-safe global source. A parsed strategy is shared by all packet-processing
+// goroutines, so it deliberately avoids a per-instance Source (which is not safe for
+// concurrent use) and the locking that sharing one would require.
+type tamperCorruptGen struct{}
 
-// splitMix64Gamma is the Weyl sequence increment used to advance the generator state.
-const splitMix64Gamma = 0x9E3779B97F4A7C15
-
-// newTamperCorruptGen returns a tamperCorruptGen seeded from the current time, XORed with a
-// process-wide counter so generators created within the same nanosecond still diverge.
-func newTamperCorruptGen() *tamperCorruptGen {
-	var g tamperCorruptGen
-	g.state.Store(uint64(time.Now().UnixNano()) ^ seedCounter.Add(1))
-	return &g
-}
-
-// seedCounter diversifies the seeds of generators created in the same nanosecond.
-var seedCounter atomic.Uint64
-
-// mix64 is the SplitMix64 finalizer: it expands a counter value into a uniformly
-// distributed 64-bit value.
-func mix64(x uint64) uint64 {
-	x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9
-	x = (x ^ (x >> 27)) * 0x94D049BB133111EB
-	return x ^ (x >> 31)
-}
-
-// next returns the next pseudorandom 64-bit value.
-func (g *tamperCorruptGen) next() uint64 {
-	return mix64(g.state.Add(splitMix64Gamma))
-}
+// newTamperCorruptGen returns a tamperCorruptGen.
+func newTamperCorruptGen() *tamperCorruptGen { return &tamperCorruptGen{} }
 
 // uint returns a uniformly random value of the given bit size as a uint32. Every value in
 // [0, 2^bitSize-1] is reachable, including the field's true maximum, on both 64-bit and
 // 32-bit platforms.
 func (g *tamperCorruptGen) uint(bitSize int) uint32 {
-	r := g.next()
+	r := rand.Uint32()
 	switch {
 	case bitSize <= 8:
-		return uint32(r & 0xff)
+		return r & 0xff
 	case bitSize <= 16:
-		return uint32(r & 0xffff)
+		return r & 0xffff
 	default:
-		return uint32(r)
+		return r
 	}
 }
 
@@ -797,12 +767,12 @@ func (g *tamperCorruptGen) uint(bitSize int) uint32 {
 // a random byte slice of random length up to n.
 func (g *tamperCorruptGen) bytes(n int) []byte {
 	if n > 20 {
-		n = int(g.next() % uint64(n))
+		n = int(rand.Uint64N(uint64(n)))
 	}
 
 	b := make([]byte, n)
 	for i := 0; i < len(b); {
-		r := g.next()
+		r := rand.Uint64()
 		for shift := 0; shift < 64 && i < len(b); shift += 8 {
 			b[i] = byte(r >> shift)
 			i++

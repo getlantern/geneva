@@ -1,7 +1,6 @@
 package actions
 
 import (
-	"bytes"
 	"reflect"
 	"sync"
 	"testing"
@@ -274,38 +273,6 @@ func testPkt() gopacket.Packet {
 	return gopacket.NewPacket(tcpBytes, layers.LinkTypeEthernet, gopacket.Default)
 }
 
-// seededTamperCorruptGen returns a tamperCorruptGen whose state is fixed at seed, letting
-// tests drive the generator deterministically.
-func seededTamperCorruptGen(seed uint64) *tamperCorruptGen {
-	g := &tamperCorruptGen{}
-	g.state.Store(seed)
-	return g
-}
-
-// TestTamperCorruptGenDeterministic locks in the SplitMix64-based generator: seeding the
-// same state must reproduce the same sequence, so any accidental change to the algorithm
-// (or to which state values are drawn) is caught.
-func TestTamperCorruptGenDeterministic(t *testing.T) {
-	t.Parallel()
-
-	wantUint32 := []uint32{
-		0x2feb6e95, 0xb266f103, 0x130f9f52, 0x0e4ae394, 0x244823f2, 0x3c80db06, 0x45376d5d,
-		0x9e9e2fa4, 0x0b3d7dd5, 0x297f77ae,
-	}
-	g := seededTamperCorruptGen(42)
-	for i, want := range wantUint32 {
-		if got := g.uint(32); got != want {
-			t.Fatalf("draw %d = %#x, expected %#x", i, got, want)
-		}
-	}
-
-	wantBytes := []byte{0x95, 0x6e, 0xeb, 0x2f, 0x26, 0x32, 0xd7, 0xbd, 0x03}
-	got := seededTamperCorruptGen(42).bytes(9)
-	if !bytes.Equal(got, wantBytes) {
-		t.Fatalf("bytes(9) = %x, expected %x", got, wantBytes)
-	}
-}
-
 // TestTamperCorruptGenFullRange is a regression test: the corrupt generator previously used
 // Intn(1<<bitSize-1), which both overflowed on 32-bit builds for bitSize 32 and could never
 // emit the field's maximum value. It must now produce every value in [0, 2^bitSize-1].
@@ -314,7 +281,7 @@ func TestTamperCorruptGenFullRange(t *testing.T) {
 
 	const draws = 100000
 
-	g := seededTamperCorruptGen(1)
+	g := newTamperCorruptGen()
 	var ones, zeros [32]bool
 	var min, max uint32 = 0xffffffff, 0
 	for range draws {
@@ -337,16 +304,16 @@ func TestTamperCorruptGenFullRange(t *testing.T) {
 	// Every bit is reachable as both 0 and 1, so the generator spans the full width of the
 	// field (the old Intn-based implementation could never set bit 31 on 32-bit builds). With
 	// 100k draws the exact endpoints 0 and 0xffffffff are not guaranteed, but the extremes
-	// must get close to them.
+	// must land within 2^20 of them.
 	for b := range ones {
 		if !ones[b] || !zeros[b] {
 			t.Fatalf("bit %d not reachable as both 0 and 1 after %d draws", b, draws)
 		}
 	}
-	if min >= 1<<16 {
+	if min >= 1<<20 {
 		t.Errorf("minimum drawn value = %#x, generator not reaching low values", min)
 	}
-	if max <= 0xffffffff-(1<<16) {
+	if max <= 0xffffffff-(1<<20) {
 		t.Errorf("maximum drawn value = %#x, generator not reaching high values", max)
 	}
 }
@@ -354,7 +321,7 @@ func TestTamperCorruptGenFullRange(t *testing.T) {
 func TestTamperCorruptGenBytes(t *testing.T) {
 	t.Parallel()
 
-	g := seededTamperCorruptGen(7)
+	g := newTamperCorruptGen()
 
 	// Lengths up to 20 are honored exactly.
 	for _, n := range []int{0, 1, 8, 20} {

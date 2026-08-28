@@ -3,6 +3,7 @@ package actions
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,11 @@ import (
 
 // ErrInvalidSleepRule is returned when a "sleep" action cannot be parsed.
 var ErrInvalidSleepRule = errors.New("invalid sleep rule")
+
+// maxSleepSeconds is the largest duration (in seconds) representable as a time.Duration, whose
+// underlying int64 counts nanoseconds. A larger value would overflow the conversion in
+// ParseSleepAction and silently wrap to a bogus duration.
+const maxSleepSeconds = float64(math.MaxInt64) / float64(time.Second)
 
 // SleepAction is a Geneva action that pauses for a fixed duration before applying its child
 // action (and therefore before the resulting packets are emitted).
@@ -39,6 +45,11 @@ func (a *SleepAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 		time.Sleep(a.Duration)
 	}
 
+	// A nil child is equivalent to an elided "send" (see String): pass the packet through.
+	if a.Action == nil {
+		return []gopacket.Packet{packet}, nil
+	}
+
 	return a.Action.Apply(packet)
 }
 
@@ -46,7 +57,9 @@ func (a *SleepAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, error) {
 // to match canonical Geneva's "sleep{<seconds>}" syntax. A plain "send" child is elided, just
 // as canonical Geneva serializes a childless sleep.
 func (a *SleepAction) String() string {
-	seconds := strconv.FormatFloat(a.Duration.Seconds(), 'g', -1, 64)
+	// Use 'f' (not 'g') so the duration is always decimal seconds, never scientific notation,
+	// matching the "sleep{<seconds>}" syntax.
+	seconds := strconv.FormatFloat(a.Duration.Seconds(), 'f', -1, 64)
 
 	if _, ok := a.Action.(*SendAction); ok || a.Action == nil {
 		return fmt.Sprintf("sleep{%s}", seconds)
@@ -76,8 +89,14 @@ func ParseSleepAction(s *scanner.Scanner) (Action, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %q is not a valid duration", ErrInvalidSleepRule, str)
 	}
+	if math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		return nil, fmt.Errorf("%w: %q is not a finite duration", ErrInvalidSleepRule, str)
+	}
 	if seconds < 0 {
 		return nil, fmt.Errorf("%w: duration must not be negative", ErrInvalidSleepRule)
+	}
+	if seconds >= maxSleepSeconds {
+		return nil, fmt.Errorf("%w: duration %q is too large", ErrInvalidSleepRule, str)
 	}
 
 	action := &SleepAction{

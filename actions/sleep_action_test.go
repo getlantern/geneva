@@ -64,6 +64,26 @@ func TestParseSleepAction(t *testing.T) {
 			rule:    "sleep{1}(drop,send)",
 			wantErr: true,
 		},
+		{
+			name:    "NaN duration",
+			rule:    "sleep{NaN}",
+			wantErr: true,
+		},
+		{
+			name:    "infinite duration",
+			rule:    "sleep{+Inf}",
+			wantErr: true,
+		},
+		{
+			name:    "overflowing duration",
+			rule:    "sleep{1e400}",
+			wantErr: true,
+		},
+		{
+			name:    "duration too large for time.Duration",
+			rule:    "sleep{100000000000}",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -110,6 +130,15 @@ func TestSleepActionApply(t *testing.T) {
 		result, err := action.Apply(testPkt())
 		require.NoError(t, err)
 		require.Empty(t, result)
+	})
+
+	t.Run("nil child passes the packet through instead of panicking", func(t *testing.T) {
+		t.Parallel()
+
+		action := &SleepAction{Duration: 0, Action: nil}
+		result, err := action.Apply(testPkt())
+		require.NoError(t, err)
+		require.Len(t, result, 1)
 	})
 
 	t.Run("actually delays for the configured duration", func(t *testing.T) {

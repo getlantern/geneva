@@ -1,7 +1,7 @@
 package actions
 
 import (
-	"math/rand"
+	"bytes"
 	"reflect"
 	"sync"
 	"testing"
@@ -274,39 +274,105 @@ func testPkt() gopacket.Packet {
 	return gopacket.NewPacket(tcpBytes, layers.LinkTypeEthernet, gopacket.Default)
 }
 
-// constSource is a rand.Source that always returns a fixed Int63, letting tests drive
-// tamperCorruptGen deterministically.
-type constSource int64
+// seededTamperCorruptGen returns a tamperCorruptGen whose state is fixed at seed, letting
+// tests drive the generator deterministically.
+func seededTamperCorruptGen(seed uint64) *tamperCorruptGen {
+	g := &tamperCorruptGen{}
+	g.state.Store(seed)
+	return g
+}
 
-func (s constSource) Int63() int64 { return int64(s) }
-func (s constSource) Seed(int64)   {}
+// TestTamperCorruptGenDeterministic locks in the SplitMix64-based generator: seeding the
+// same state must reproduce the same sequence, so any accidental change to the algorithm
+// (or to which state values are drawn) is caught.
+func TestTamperCorruptGenDeterministic(t *testing.T) {
+	t.Parallel()
+
+	wantUint32 := []uint32{
+		0x2feb6e95, 0xb266f103, 0x130f9f52, 0x0e4ae394, 0x244823f2, 0x3c80db06, 0x45376d5d,
+		0x9e9e2fa4, 0x0b3d7dd5, 0x297f77ae,
+	}
+	g := seededTamperCorruptGen(42)
+	for i, want := range wantUint32 {
+		if got := g.uint(32); got != want {
+			t.Fatalf("draw %d = %#x, expected %#x", i, got, want)
+		}
+	}
+
+	wantBytes := []byte{0x95, 0x6e, 0xeb, 0x2f, 0x26, 0x32, 0xd7, 0xbd, 0x03}
+	got := seededTamperCorruptGen(42).bytes(9)
+	if !bytes.Equal(got, wantBytes) {
+		t.Fatalf("bytes(9) = %x, expected %x", got, wantBytes)
+	}
+}
 
 // TestTamperCorruptGenFullRange is a regression test: the corrupt generator previously used
 // Intn(1<<bitSize-1), which both overflowed on 32-bit builds for bitSize 32 and could never
-// emit the field's maximum value. It must now produce every value in [0, 2^bitSize-1],
-// including both endpoints, on any platform.
+// emit the field's maximum value. It must now produce every value in [0, 2^bitSize-1].
 func TestTamperCorruptGenFullRange(t *testing.T) {
 	t.Parallel()
 
-	// math/rand's Uint32() returns uint32(Int63() >> 31); this constant makes Uint32()
-	// deterministically return 0xffffffff.
-	allOnes := constSource(int64(0xffffffff) << 31)
-	if got := (&tamperCorruptGen{r: rand.New(allOnes)}).uint(32); got != 0xffffffff {
-		t.Errorf("bitSize 32 with maxed source = %#x, expected 0xffffffff", got)
-	}
+	const draws = 100000
 
-	maxed := &tamperCorruptGen{r: rand.New(constSource(int64(0xffffffff) << 31))}
-	for bitSize, want := range map[int]uint32{8: 0xff, 16: 0xffff} {
-		if got := maxed.uint(bitSize); got != want {
-			t.Errorf("bitSize %d with maxed source = %#x, expected %#x", bitSize, got, want)
+	g := seededTamperCorruptGen(1)
+	var ones, zeros [32]bool
+	var min, max uint32 = 0xffffffff, 0
+	for range draws {
+		v := g.uint(32)
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+		for b := range ones {
+			if v&(1<<uint(b)) != 0 {
+				ones[b] = true
+			} else {
+				zeros[b] = true
+			}
 		}
 	}
 
-	zero := &tamperCorruptGen{r: rand.New(constSource(123))}
-	for _, bitSize := range []int{8, 16, 32} {
-		if got := zero.uint(bitSize); got != 0 {
-			t.Errorf("bitSize %d with zero source = %#x, expected 0", bitSize, got)
+	// Every bit is reachable as both 0 and 1, so the generator spans the full width of the
+	// field (the old Intn-based implementation could never set bit 31 on 32-bit builds). With
+	// 100k draws the exact endpoints 0 and 0xffffffff are not guaranteed, but the extremes
+	// must get close to them.
+	for b := range ones {
+		if !ones[b] || !zeros[b] {
+			t.Fatalf("bit %d not reachable as both 0 and 1 after %d draws", b, draws)
 		}
+	}
+	if min >= 1<<16 {
+		t.Errorf("minimum drawn value = %#x, generator not reaching low values", min)
+	}
+	if max <= 0xffffffff-(1<<16) {
+		t.Errorf("maximum drawn value = %#x, generator not reaching high values", max)
+	}
+}
+
+func TestTamperCorruptGenBytes(t *testing.T) {
+	t.Parallel()
+
+	g := seededTamperCorruptGen(7)
+
+	// Lengths up to 20 are honored exactly.
+	for _, n := range []int{0, 1, 8, 20} {
+		if got := len(g.bytes(n)); got != n {
+			t.Errorf("len(bytes(%d)) = %d", n, got)
+		}
+	}
+
+	// Lengths over 20 get a random length in [0, n).
+	var sawShort bool
+	for range 100 {
+		if got := len(g.bytes(64)); got < 64 {
+			sawShort = true
+			break
+		}
+	}
+	if !sawShort {
+		t.Error("bytes(64) never produced a shortened random length")
 	}
 }
 

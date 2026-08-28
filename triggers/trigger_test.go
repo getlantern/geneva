@@ -435,9 +435,9 @@ func TestGasConstructorsDistinguishZero(t *testing.T) {
 	}
 }
 
-// TestEmptyTriggerValues ports canonical Geneva's empty-value handling: "[tcp:load:]" is a
-// meaningful trigger that matches packets with no payload, while an empty value for any other
-// field would be a permanently dead trigger and is rejected explicitly.
+// TestEmptyTriggerValues ports canonical Geneva's empty-value handling: "[tcp:load:]" matches
+// packets with no payload and an empty option value is a presence trigger, while an empty value
+// for any other field would be a permanently dead trigger and is rejected explicitly.
 func TestEmptyTriggerValues(t *testing.T) {
 	t.Parallel()
 
@@ -447,12 +447,6 @@ func TestEmptyTriggerValues(t *testing.T) {
 		"[TCP:sport:]",
 		"[TCP:seq:]",
 		"[TCP:window:]",
-		// Data-bearing options need a value: an empty value could only ever match a malformed
-		// option with no data, so it is a permanently dead trigger.
-		"[TCP:options-mss:]",
-		"[TCP:options-wscale:]",
-		"[TCP:options-sack:]",
-		"[TCP:options-timestamp:]",
 		"[IP:flags:]",
 		"[IP:ttl:]",
 		"[IP:len:]",
@@ -471,10 +465,14 @@ func TestEmptyTriggerValues(t *testing.T) {
 	accepted := []string{
 		"[TCP:load:]",
 		"[IP:load:]",
-		// Data-less options legitimately have empty values; canonical Geneva ships
-		// strategies like "[tcp:options-sackok:]".
+		// An empty option value is a presence trigger and is legitimate for any option;
+		// canonical Geneva ships strategies like "[tcp:options-sackok:]" and "[tcp:options-sack:]".
 		"[TCP:options-sackok:]",
 		"[TCP:options-nop:]",
+		"[TCP:options-mss:]",
+		"[TCP:options-wscale:]",
+		"[TCP:options-sack:]",
+		"[TCP:options-timestamp:]",
 		// Non-empty option values with gas still parse.
 		"[TCP:options-sack:4:4]",
 	}

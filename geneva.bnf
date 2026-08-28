@@ -30,6 +30,7 @@ Proto : "IP"
 Action : Duplicate
        | Fragment
        | Tamper
+       | Sleep
        | Drop
        | Send
        | empty
@@ -60,11 +61,23 @@ TamperRule : "{" Proto ":" field ":" TamperMode "}" ;
 
 TamperMode : Replace
            | Corrupt
+           | Add
            ;
 
 Replace : "replace:" value ;
 
 Corrupt : "corrupt" ;
+
+; "add" adds value to a numeric field's current value.
+Add : "add:" value ;
+
+;;;;;;;;; sleep rule
+; duration is expressed in (fractional) seconds; the child action is optional.
+Sleep : "sleep{" seconds "}"
+      | "sleep{" seconds "}" "(" Action ")"
+      ;
+
+seconds : _unsigned_number [ "." _unsigned_number ] ;
 
 ;;;;;;;;; drop rule
 Drop : "drop" ;

@@ -85,6 +85,12 @@ func collectActionSlot(slot actionSlot, slots *[]actionSlot) {
 			set: func(action actions.Action) { typed.Action = action },
 		}
 		collectActionSlot(child, slots)
+	case *actions.SleepAction:
+		child := actionSlot{
+			get: func() actions.Action { return typed.Action },
+			set: func(action actions.Action) { typed.Action = action },
+		}
+		collectActionSlot(child, slots)
 	}
 }
 

@@ -136,6 +136,10 @@ func ParseAction(s *scanner.Scanner) (Action, error) {
 		return ParseTamperAction(s)
 	}
 
+	if s.FindToken("sleep", true) {
+		return ParseSleepAction(s)
+	}
+
 	if s.FindToken("drop", true) {
 		if err := s.Advance(4); err != nil {
 			return nil, fmt.Errorf(

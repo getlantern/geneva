@@ -107,13 +107,22 @@ fragments.
 ### tamper{protocol:field:mode[:newValue]}(a1)
 
 The "tamper" action takes the original packet and modifies it in some fashion, depending on the protocol, field, and
-mode given. There are two modes: replace and corrupt. The "replace" mode will replace the value of the given field with
-newValue, while the "corrupt" mode will replace the value with random data. (Note that there are other modes that the
-Python code supports that are not defined in the original Geneva paper.)
+mode given. There are three modes: replace, corrupt, and add. The "replace" mode will replace the value of the given
+field with newValue; the "corrupt" mode will replace the value with random data; and the "add" mode adds newValue to
+the field's current value, wrapping at the field's bit size. Add mode is only valid for numeric scalar fields (e.g.,
+`seq`, `ack`, `ttl`); it is rejected for the flags bitmap, payload (`load`), options, and address fields. (Note that
+`add` is one of the modes the Python code supports that are not defined in the original Geneva paper.)
+
+### sleep{seconds}(a1)
+
+The "sleep" action pauses for the given duration — expressed in (fractional) seconds, e.g., `sleep{0.5}` — before
+applying its child action, and therefore before the resulting packets are emitted. The pause is synchronous, so in a
+per-packet processing model it delays only the packet being processed. As in canonical Geneva, the child action is
+optional: `sleep{1}` is shorthand for `sleep{1}(send)`.
 
 Additionally, note that not all actions are valid for both inbound and outbound directions. The Python code mentions
 that "branching actions are not supported on inbound trees". Practically, this means that the duplicate and fragment
-actions can only be applied to outbound packets, while the drop and tamper actions can apply to packets of
+actions can only be applied to outbound packets, while the drop, tamper, and sleep actions can apply to packets of
 either direction. The parser and `Validate` enforce this constraint.
 
 ## Disclaimer

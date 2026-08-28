@@ -234,9 +234,8 @@ func FragmentIPPacket(packet gopacket.Packet, fragSize int) ([]gopacket.Packet, 
 	binary.BigEndian.PutUint16(ipv4Buf[2:], hdrLen+offset)
 
 	// Set the More Fragments bit and make the fragment offset zero, preserving the evil
-	// (0x8000) and Don't Fragment (0x4000) bits. The flags/offset word is big-endian on the
-	// wire; the previous little-endian write here corrupted the flag bits whenever the
-	// original fragment offset had low bits set.
+	// (0x8000) and Don't Fragment (0x4000) bits. The flags/offset word is big-endian on
+	// the wire.
 	flagsAndFrags := binary.BigEndian.Uint16(ipv4Buf[6:])
 	flagsAndFrags = (flagsAndFrags | 0x2000) & 0xe000
 	binary.BigEndian.PutUint16(ipv4Buf[6:], flagsAndFrags)

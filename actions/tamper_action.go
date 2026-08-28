@@ -23,6 +23,8 @@ const (
 	TamperReplace = iota
 	// TamperCorrupt replaces the value of a packet field with a randomly-generated value.
 	TamperCorrupt
+	// TamperAdd adds the given value to the current value of a numeric packet field.
+	TamperAdd
 )
 
 var (
@@ -41,6 +43,8 @@ func (tm TamperMode) String() string {
 		return "replace"
 	case TamperCorrupt:
 		return "corrupt"
+	case TamperAdd:
+		return "add"
 	}
 
 	return ""
@@ -51,10 +55,11 @@ func (tm TamperMode) String() string {
 // unless the tamper rule is specifically for the checksum or length. If proto is TCP
 // and the field is an option, the option will be added if it doesn't exist.
 //
-// There are two modes for tampering:
+// There are three modes for tampering:
 //
 //	"replace" - replace the field with the given value.
 //	"corrupt" - replace the field with a randomly-generated value of the same bitsize.
+//	"add"     - add the given value to the field's current value (numeric fields only).
 //
 // Currently, only TCP and IPv4 is supported. UDP support is planned for the future.
 type TamperAction struct {
@@ -74,7 +79,7 @@ type TamperAction struct {
 // String returns a string representation of this Action.
 func (a *TamperAction) String() string {
 	newValue := ""
-	if a.Mode == TamperReplace {
+	if a.Mode == TamperReplace || a.Mode == TamperAdd {
 		newValue = fmt.Sprintf(":%s", a.NewValue)
 	}
 
@@ -124,9 +129,15 @@ func ParseTamperAction(s *scanner.Scanner) (Action, error) {
 			return nil, fmt.Errorf("%w: corrupt mode does not accept a value", ErrInvalidTamperRule)
 		}
 		mode = TamperCorrupt
+	case "add":
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("%w: add mode requires a value", ErrInvalidTamperRule)
+		}
+		mode = TamperAdd
+		newValue = fields[3]
 	default:
 		return nil, fmt.Errorf(
-			"%w: %q must be either 'replace' or 'corrupt'",
+			"%w: %q must be one of 'replace', 'corrupt', or 'add'",
 			ErrInvalidTamperMode,
 			fields[2],
 		)
@@ -341,9 +352,45 @@ func NewTCPTamperAction(ta TamperAction) (*TCPTamperAction, error) {
 			field:        field,
 			values:       values,
 		}, nil
+	case TamperAdd:
+		if !tcpFieldSupportsAdd(field) {
+			return nil, fmt.Errorf(
+				"%w: add mode is not supported for TCP field %q",
+				ErrInvalidTamperRule,
+				ta.Field,
+			)
+		}
+
+		val, err := strconv.ParseUint(ta.NewValue, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"%w: %q is not a valid value for field %q",
+				ErrInvalidTamperRule,
+				ta.NewValue,
+				ta.Field,
+			)
+		}
+
+		return &TCPTamperAction{
+			TamperAction: ta,
+			field:        field,
+			values:       tamperValues{add: true, vUint: uint32(val)},
+		}, nil
 	}
 
 	return nil, fmt.Errorf("%w: %q is not a valid tamper mode for TCP", ErrInvalidTamperRule, ta.Mode)
+}
+
+// tcpFieldSupportsAdd reports whether the TCP field is a numeric scalar that "add" mode can
+// increment. Byte-valued fields (payload, options) and the flags bitmap are excluded.
+func tcpFieldSupportsAdd(field TCPField) bool {
+	switch field {
+	case TCPFieldSrcPort, TCPFieldDstPort, TCPFieldSeq, TCPFieldAck,
+		TCPFieldDataOff, TCPFieldWindow, TCPFieldUrgent, TCPFieldChecksum:
+		return true
+	default:
+		return false
+	}
 }
 
 // Apply applies the tamper action to the given packet.
@@ -392,21 +439,21 @@ func (a *TCPTamperAction) Apply(packet gopacket.Packet) ([]gopacket.Packet, erro
 func tamperTCP(tcp *layers.TCP, field TCPField, values tamperValues) error {
 	switch field {
 	case TCPFieldSrcPort:
-		tcp.SrcPort = layers.TCPPort(values.uint(16))
+		tcp.SrcPort = layers.TCPPort(values.combine(uint32(tcp.SrcPort), 16))
 	case TCPFieldDstPort:
-		tcp.DstPort = layers.TCPPort(values.uint(16))
+		tcp.DstPort = layers.TCPPort(values.combine(uint32(tcp.DstPort), 16))
 	case TCPFieldSeq:
-		tcp.Seq = values.uint(32)
+		tcp.Seq = values.combine(tcp.Seq, 32)
 	case TCPFieldAck:
-		tcp.Ack = values.uint(32)
+		tcp.Ack = values.combine(tcp.Ack, 32)
 	case TCPFieldDataOff:
-		tcp.DataOffset = uint8(values.uint(8))
+		tcp.DataOffset = uint8(values.combine(uint32(tcp.DataOffset), 8))
 	case TCPFieldWindow:
-		tcp.Window = uint16(values.uint(16))
+		tcp.Window = uint16(values.combine(uint32(tcp.Window), 16))
 	case TCPFieldUrgent:
-		tcp.Urgent = uint16(values.uint(16))
+		tcp.Urgent = uint16(values.combine(uint32(tcp.Urgent), 16))
 	case TCPFieldChecksum:
-		tcp.Checksum = uint16(values.uint(16))
+		tcp.Checksum = uint16(values.combine(uint32(tcp.Checksum), 16))
 	case TCPFieldFlags:
 		setTCPFlags(tcp, uint16(values.uint(16)))
 	case TCPLoad:
@@ -619,9 +666,46 @@ func NewIPv4TamperAction(ta TamperAction) (*IPv4TamperAction, error) {
 			field:        field,
 			values:       values,
 		}, nil
+	case TamperAdd:
+		if !ipv4FieldSupportsAdd(field) {
+			return nil, fmt.Errorf(
+				"%w: add mode is not supported for IPv4 field %q",
+				ErrInvalidTamperRule,
+				ta.Field,
+			)
+		}
+
+		val, err := strconv.ParseUint(ta.NewValue, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"%w: %q is not a valid value for field %q",
+				ErrInvalidTamperRule,
+				ta.NewValue,
+				ta.Field,
+			)
+		}
+
+		return &IPv4TamperAction{
+			TamperAction: ta,
+			field:        field,
+			values:       tamperValues{add: true, vUint: uint32(val)},
+		}, nil
 	}
 
 	return nil, fmt.Errorf("%w: %q is not a valid tamper mode for IPv4", ErrInvalidTamperRule, ta.Mode)
+}
+
+// ipv4FieldSupportsAdd reports whether the IPv4 field is a numeric scalar that "add" mode can
+// increment. Address and payload fields are excluded, as are fields the tamperer does not
+// write (id, flags).
+func ipv4FieldSupportsAdd(field IPv4Field) bool {
+	switch field {
+	case IPv4FieldVersion, IPv4FieldIHL, IPv4FieldTOS, IPv4FieldLength,
+		IPv4FieldFragOffset, IPv4FieldTTL, IPv4FieldProtocol, IPv4FieldChecksum:
+		return true
+	default:
+		return false
+	}
 }
 
 // Apply applies the tamper action to the given packet.
@@ -663,23 +747,23 @@ func tamperIPv4(ip *layers.IPv4, field IPv4Field, values tamperValues) error {
 	case IPv4FieldDstIP:
 		ip.DstIP = values.bytes(4)
 	case IPv4FieldVersion:
-		ip.Version = uint8(values.uint(8))
+		ip.Version = uint8(values.combine(uint32(ip.Version), 8))
 	case IPv4FieldIHL:
-		ip.IHL = uint8(values.uint(8))
+		ip.IHL = uint8(values.combine(uint32(ip.IHL), 8))
 	case IPv4FieldTOS:
-		ip.TOS = uint8(values.uint(8))
+		ip.TOS = uint8(values.combine(uint32(ip.TOS), 8))
 	case IPv4FieldLength:
-		ip.Length = uint16(values.uint(16))
+		ip.Length = uint16(values.combine(uint32(ip.Length), 16))
 	case IPv4FieldFlags:
 		// not implemented yet. see comment above.
 	case IPv4FieldFragOffset:
-		ip.FragOffset = uint16(values.uint(16))
+		ip.FragOffset = uint16(values.combine(uint32(ip.FragOffset), 16))
 	case IPv4FieldTTL:
-		ip.TTL = uint8(values.uint(8))
+		ip.TTL = uint8(values.combine(uint32(ip.TTL), 8))
 	case IPv4FieldProtocol:
-		ip.Protocol = layers.IPProtocol(values.uint(8))
+		ip.Protocol = layers.IPProtocol(values.combine(uint32(ip.Protocol), 8))
 	case IPv4FieldChecksum:
-		ip.Checksum = uint16(values.uint(16))
+		ip.Checksum = uint16(values.combine(uint32(ip.Checksum), 16))
 	case IPv4Load:
 		ip.Payload = values.bytes(1480)
 	}
@@ -720,8 +804,26 @@ func updateIPv4LengthForTCP(ip *layers.IPv4, tcp *layers.TCP) {
 type tamperValues struct {
 	// corrupt enables corrupt mode, drawing random values instead of using the fixed ones.
 	corrupt bool
-	vUint   uint32
-	vBytes  []byte
+	// add enables add mode, treating vUint as a delta added to the field's current value.
+	add    bool
+	vUint  uint32
+	vBytes []byte
+}
+
+// combine returns the value to write into a numeric field whose current value is cur. In add
+// mode it returns cur + vUint, masked to bitSize; otherwise cur is ignored and the fixed
+// replace value (or a fresh corrupt draw) is returned. bitSize matches the semantics of uint.
+func (v tamperValues) combine(cur uint32, bitSize int) uint32 {
+	if !v.add {
+		return v.uint(bitSize)
+	}
+
+	sum := cur + v.vUint
+	if bitSize > 0 && bitSize < 32 {
+		sum &= (uint32(1) << uint(bitSize)) - 1
+	}
+
+	return sum
 }
 
 // uint returns the value to write: the fixed replace value, or in corrupt mode a uniformly

@@ -168,6 +168,24 @@ func validateAction(action actions.Action, direction Direction, depth int, count
 		if err := validateAction(child, direction, depth+1, count, active); err != nil {
 			return fmt.Errorf("IPv4 tamper child: %w", err)
 		}
+	case *actions.SleepAction:
+		if typed == nil {
+			return errors.New("sleep action is nil")
+		}
+		// Sleep is not a branching action, so — like tamper — it is valid in either
+		// direction.
+		if typed.Duration < 0 {
+			return fmt.Errorf("sleep duration %s is invalid", typed.Duration)
+		}
+		// A nil child is an elided send (see SleepAction.Apply and String), so there is
+		// nothing to recurse into; validate only a child that is actually present. This
+		// also keeps mutation/crossover, which can swap in nil passthrough subtrees,
+		// from producing a strategy that validation rejects but Apply accepts.
+		if typed.Action != nil {
+			if err := validateAction(typed.Action, direction, depth+1, count, active); err != nil {
+				return fmt.Errorf("sleep child: %w", err)
+			}
+		}
 	default:
 		return fmt.Errorf("unsupported action type %T", action)
 	}
@@ -180,7 +198,8 @@ func validateAction(action actions.Action, direction Direction, depth int, count
 func isSupportedBranchingAction(action actions.Action) bool {
 	switch action.(type) {
 	case *actions.DuplicateAction, *actions.FragmentAction,
-		*actions.TCPTamperAction, *actions.IPv4TamperAction:
+		*actions.TCPTamperAction, *actions.IPv4TamperAction,
+		*actions.SleepAction:
 		return true
 	}
 	return false

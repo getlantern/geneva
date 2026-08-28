@@ -447,6 +447,12 @@ func TestEmptyTriggerValues(t *testing.T) {
 		"[TCP:sport:]",
 		"[TCP:seq:]",
 		"[TCP:window:]",
+		// Data-bearing options need a value: an empty value could only ever match a malformed
+		// option with no data, so it is a permanently dead trigger.
+		"[TCP:options-mss:]",
+		"[TCP:options-wscale:]",
+		"[TCP:options-sack:]",
+		"[TCP:options-timestamp:]",
 		"[IP:flags:]",
 		"[IP:ttl:]",
 		"[IP:len:]",
@@ -468,7 +474,9 @@ func TestEmptyTriggerValues(t *testing.T) {
 		// Data-less options legitimately have empty values; canonical Geneva ships
 		// strategies like "[tcp:options-sackok:]".
 		"[TCP:options-sackok:]",
-		"[TCP:options-sack::4]",
+		"[TCP:options-nop:]",
+		// Non-empty option values with gas still parse.
+		"[TCP:options-sack:4:4]",
 	}
 	for _, dna := range accepted {
 		if _, err := triggers.ParseTrigger(scanner.NewScanner(dna)); err != nil {
@@ -496,7 +504,12 @@ func tcpPacketWithPayload(payload string) gopacket.Packet {
 	copy(data, base)
 	data = append(data, []byte(payload)...)
 
-	// The TCP header ends at offset 40 (20 bytes IP + 20 bytes TCP); bump Total Length.
+	// The TCP header ends at offset 40 (20 bytes IP + 20 bytes TCP); bump Total Length. The
+	// length must fit the 16-bit field, so oversized payloads fail loudly instead of wrapping
+	// into an invalid packet.
+	if len(data) > 0xffff {
+		panic(fmt.Sprintf("tcpPacketWithPayload: packet too large: %d bytes", len(data)))
+	}
 	binary.BigEndian.PutUint16(data[2:4], uint16(len(data)))
 
 	return gopacket.NewPacket(data, layers.LayerTypeIPv4, gopacket.Default)

@@ -1,6 +1,6 @@
 package actions
 
-import "github.com/google/gopacket"
+import "github.com/gopacket/gopacket"
 
 // SendAction is a Geneva action to send a packet.
 type SendAction struct{}

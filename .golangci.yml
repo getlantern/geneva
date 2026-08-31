@@ -1,65 +1,17 @@
+version: "2"
+
 linters:
-  enable-all: true
-  disable:
-    # deprecated
-    - golint
-    - interfacer
-    - maligned
-    - scopelint
+  default: standard
+  enable:
+    - gosec
+  settings:
+    gosec:
+      excludes:
+        - G104
+        - G115
+        - G404
 
-    # less useful
-    - cyclop
-    - exhaustivestruct
-    - exhaustruct
-    - forbidigo
-    - funlen
-    - gci
-    - gochecknoglobals
-    - gomnd
-    - ireturn
-    - nolintlint
-    - varnamelen
-    - depguard
-    - dupword
-    - testpackage
-    - godox
-
-linters-settings:
-  misspell:
-    ignore-words:
-      - strat
-  nlreturn:
-    block-size: 2
-  exhaustive:
-    default-signifies-exhaustive: true
-  gosec:
-    excludes:
-      - G104 # Duplicated errcheck checks
-      - G404 # Use of math/rand for RNG
-  wrapcheck:
-    ignoreSigs:
-      - .Errorf(
-      - errors.New(
-      - errors.Unwrap(
-      - .Apply(
-  revive:
-    rules:
-      - name: unused-parameter
-        severity: warning
-        disabled: true
-        arguments:
-          - allowRegex: "^_"
-
-issues:
-  exclude-rules:
-    # False positive: https://github.com/kunwardeep/paralleltest/issues/8.
-    - linters:
-      - paralleltest
-      text: "does not use range value in test Run"
-    - linters:
-      - errcheck
-      text: "Error return value of .(tcp|ip|udp).SerializeTo. is not checked"
-  exclude:
-    # these should be self-documenting
-    - "exported const ((TCP|IPv4)(Field|Flag|Option).*|IPFieldVersion) should (have comment|be of the form)"
-    - "do not define dynamic errors, use wrapped static errors instead:"
+formatters:
+  enable:
+    - gofmt
+    - goimports

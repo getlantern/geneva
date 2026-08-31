@@ -1,12 +1,12 @@
 # geneva, an implementation of Geneva rules for Go
 [![Go Actions Status](https://github.com/getlantern/geneva/actions/workflows/run-tests.yaml/badge.svg)](https://github.com/getlantern/geneva/actions)
-[![Coverage Status](https://coveralls.io/repos/github/getlantern/geneva/badge.svg?branch=main)](https://coveralls.io/github/getlantern/geneva?branch=main)
 
 This is a reimplementation of the client- and server-side rule processing mechanisms of the [Geneva][geneva] project.
 
 Geneva is both a method to describe ways of manipulating packets to attempt to circumvent censorship, and a genetic
-algoritm (_GENetic EVAsion_) that one can deploy to discover new circumventions. (This package does not implement the
-genetic algorithm.) More broadly, though, one can encode arbitrary instructions for packet manipulation using Geneva
+algorithm (_GENetic EVAsion_) that one can deploy to discover new circumventions. This package does not implement the
+population manager or evaluator; the dependency-free `mutate` package provides the strategy mutation and crossover
+primitives those systems need. More broadly, though, one can encode arbitrary instructions for packet manipulation using Geneva
 rules as a sort of "standard syntax", although the use case outside of censorship circumvention may be somewhat tenuous.
 
 This package aims to implement the same triggers and actions that the Geneva project's canonical Python package
@@ -52,15 +52,26 @@ The outbound forest for the above action in graph form looks like this:
 
 ![Inbound Forest Graph](img/rule_example.svg)
 
-In a forest, each action tree must adhere to the syntax `[trigger]-action-|`. Currently, the parser for this package is
-stricter than the original; this is a bug.
+In a forest, each action tree must adhere to the syntax `[trigger]-action-|`. The action is optional: canonical Geneva allows trigger-only passthrough trees such as `[TCP:flags:A]-|`, and parses strategies wrapped in a single pair of hanging double quotes (e.g. `"\/ [TCP:flags:A]-drop-|"`). The parser rejects branching actions
+(`duplicate` and `fragment`) in inbound trees because inbound evaluation is single-in/single-out.
 
 ## Triggers
 
 A trigger defines a way to match packets so that an action tree can be applied to them. In the example above, the first
 trigger is `[TCP:flags:S]`. This is a trigger that matches on the TCP segment's _flags_ field, and requires that only
 the `SYN` flag be set. (Note that this trigger will not fire for packets that have, i.e., both `SYN` and `ACK` set.) If
-the packet is not a TCP packet, or the flags do not match exactly, then this trigger will not fire.
+the packet is not a TCP packet, or the flags do not match exactly, then this trigger will not fire. As a
+compatibility note (matching canonical Geneva), earlier versions of this library treated a bare flag set such as
+`[TCP:flags:A]` as a *subset* match that fired whenever at least those bits were set; matching is now exact. To opt
+back into subset matching, append a `*`: `[TCP:flags:A*]` fires for any segment with ACK set.
+
+Triggers may include a fourth, integer gas field. Positive gas bounds how many matching packets can fire the tree,
+zero disables it, and negative gas is a bomb that starts firing after that many matching packets. For example,
+
+An empty trigger value is only valid where it denotes "no data": `[TCP:load:]` matches packets with no payload, and
+data-less options such as `[TCP:options-sackok:]` match their option whenever present. Empty values on all other
+fields are rejected when parsing or validating, since they could only ever produce a trigger that never fires.
+`[TCP:flags:S:2]` fires twice, while `[TCP:flags:S:-2]` suppresses two matches and fires from the third onward.
 
 ## Actions
 
@@ -89,19 +100,30 @@ fragment. The first fragment will include up to _offset_ bytes of the layer's pa
 the rest. As an example, given an IPv4 packet with a 60-byte payload and an 8-byte offset, the first fragment will have
 the same IP header as the original packet (aside from the fields that must be fixed) and then the first eight bytes of
 the payload. The second fragment will contain the other 52 bytes. (You can also indicate that the fragments be returned
-out-of-order; i.e., reversed, by specifying "False" for the _inOrder_ argument.)
+out-of-order; i.e., reversed, by specifying "False" for the _inOrder_ argument.) TCP fragmentation also supports an
+optional fourth _overlap_ field, e.g., `fragment{TCP:8:True:4}`, which repeats that many bytes of payload in both
+fragments.
 
 ### tamper{protocol:field:mode[:newValue]}(a1)
 
 The "tamper" action takes the original packet and modifies it in some fashion, depending on the protocol, field, and
-mode given. There are two modes: replace and corrupt. The "replace" mode will replace the value of the given field with
-newValue, while the "corrupt" mode will replace the value with random data. (Note that there are other modes that the
-Python code supports that are not defined in the original Geneva paper.)
+mode given. There are three modes: replace, corrupt, and add. The "replace" mode will replace the value of the given
+field with newValue; the "corrupt" mode will replace the value with random data; and the "add" mode adds newValue to
+the field's current value, wrapping at the field's bit size. Add mode is only valid for numeric scalar fields (e.g.,
+`seq`, `ack`, `ttl`); it is rejected for the flags bitmap, payload (`load`), options, and address fields. (Note that
+`add` is one of the modes the Python code supports that are not defined in the original Geneva paper.)
+
+### sleep{seconds}(a1)
+
+The "sleep" action pauses for the given duration — expressed in (fractional) seconds, e.g., `sleep{0.5}` — before
+applying its child action, and therefore before the resulting packets are emitted. The pause is synchronous, so in a
+per-packet processing model it delays only the packet being processed. As in canonical Geneva, the child action is
+optional: `sleep{1}` is shorthand for `sleep{1}(send)`.
 
 Additionally, note that not all actions are valid for both inbound and outbound directions. The Python code mentions
 that "branching actions are not supported on inbound trees". Practically, this means that the duplicate and fragment
-actions can only be applied to outbound packets, while the sleep, drop, and tamper actions can apply to packets of
-either direction. (Note that this package does not currently enforce this; this is also a bug.)
+actions can only be applied to outbound packets, while the drop, tamper, and sleep actions can apply to packets of
+either direction. The parser and `Validate` enforce this constraint.
 
 ## Disclaimer
 

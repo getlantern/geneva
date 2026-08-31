@@ -2,7 +2,8 @@
 
 _alpha : 'a'-'z' | 'A'-'Z' ;
 _alnum : _alpha | '0'..'9' ;
-_number : [ '-' ] '1'..'9' { '0'..'9' } ;
+_unsigned_number : '0' | '1'..'9' { '0'..'9' } ;
+_number : [ '-' ] _unsigned_number ;
 field : _alnum | { _alnum | '-' } ;
 value : _alnum ;
 offset : _number ;
@@ -14,9 +15,11 @@ Forest : Forest ActionTree
        | empty
        ;
 
-ActionTree : Trigger "-" Action "-|" ;
+ActionTree : Trigger "-" [ Action ] "-|" ;
 
-Trigger : "[" Proto ":" field ":" value "]" ;
+Trigger : "[" Proto ":" field ":" value [ ":" gas ] "]" ;
+
+gas : _number ;
 
 Proto : "IP"
       | "ip"
@@ -27,6 +30,7 @@ Proto : "IP"
 Action : Duplicate
        | Fragment
        | Tamper
+       | Sleep
        | Drop
        | Send
        | empty
@@ -40,7 +44,9 @@ Fragment : "fragment" FragmentRule
          | "fragment" FragmentRule "(" Action "," Action ")"
          ;
 
-FragmentRule : "{" Proto ":" offset ":" InOrder "}"
+FragmentRule : "{" Proto ":" offset ":" InOrder [ ":" overlap ] "}"
+
+overlap : _unsigned_number ;
 
 InOrder : "True"
         | "False"
@@ -55,11 +61,23 @@ TamperRule : "{" Proto ":" field ":" TamperMode "}" ;
 
 TamperMode : Replace
            | Corrupt
+           | Add
            ;
 
 Replace : "replace:" value ;
 
 Corrupt : "corrupt" ;
+
+; "add" adds value to a numeric field's current value.
+Add : "add:" value ;
+
+;;;;;;;;; sleep rule
+; duration is expressed in (fractional) seconds; the child action is optional.
+Sleep : "sleep{" seconds "}"
+      | "sleep{" seconds "}" "(" Action ")"
+      ;
+
+seconds : _unsigned_number [ "." _unsigned_number ] ;
 
 ;;;;;;;;; drop rule
 Drop : "drop" ;

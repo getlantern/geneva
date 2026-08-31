@@ -8,28 +8,17 @@ on:
   pull_request:
 jobs:
   build:
-    name: test
+    name: Go ${{ matrix.go }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.25.x", "1.27.x"]
     steps:
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: 1.18
-      - uses: actions/checkout@v3
-      # Install gotestfmt on the VM running the action.
-      - name: Set up gotestfmt
-        uses: haveyoudebuggedit/gotestfmt-action@v2
-        with:
-          # Optional: pass GITHUB_TOKEN to avoid rate limiting.
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Run tests with nice formatting. Save the original log in /tmp/gotest.log
+          go-version: ${{ matrix.go }}
+          cache: true
       - name: Run tests
-        run: make test-and-cover 2>&1 | tee /tmp/gotest.log | grep '"Time"' | gotestfmt
-      - name: Install goveralls
-        env:
-          GO111MODULE: "off"
-        run: go get github.com/mattn/goveralls
-      - name: Send coverage
-        env:
-          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: goveralls -coverprofile=profile.cov -service=github
+        run: go test -race -coverprofile=profile.cov -covermode=atomic ./...

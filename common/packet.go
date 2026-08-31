@@ -4,11 +4,23 @@ package common
 import (
 	"encoding/binary"
 
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket/layers"
 )
 
 // UpdateTCPChecksum updates the TCP checksum field and the raw bytes for a gopacket TCP layer.
-func UpdateTCPChecksum(tcp *layers.TCP) {
+//
+// The TCP checksum covers a pseudo-header derived from the IPv4 source and
+// destination addresses, so ip must be the TCP layer's network layer. A freshly
+// decoded packet does not carry that association, which is why the caller passes
+// it explicitly; without it ComputeChecksum fails and the checksum would be left
+// zero. ip may be nil only when the TCP layer already has its network layer set.
+func UpdateTCPChecksum(tcp *layers.TCP, ip *layers.IPv4) {
+	if ip != nil {
+		// Ignoring the error is safe: it only reports an unsupported network
+		// layer type, and *layers.IPv4 is always supported.
+		_ = tcp.SetNetworkLayerForChecksum(ip)
+	}
+
 	// the ComputeChecksum method requires the checksum bytes in the raw packet to be zeroed out.
 	tcp.Contents[16] = 0
 	tcp.Contents[17] = 0

@@ -2,12 +2,14 @@ package actions
 
 import (
 	"reflect"
+	"sync"
 	"testing"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/getlantern/geneva/internal/scanner"
 )
@@ -32,8 +34,8 @@ func TestParseTamperAction(t *testing.T) {
 					Mode:     TamperReplace,
 					Action:   &SendAction{},
 				},
-				field:    TCPFieldDataOff,
-				valueGen: &tamperReplaceGen{vUint: 10},
+				field:  TCPFieldDataOff,
+				values: tamperValues{vUint: 10},
 			},
 			wantErr: false,
 		}, {
@@ -47,8 +49,8 @@ func TestParseTamperAction(t *testing.T) {
 					Mode:     TamperReplace,
 					Action:   &SendAction{},
 				},
-				field:    TCPOptionMss,
-				valueGen: &tamperReplaceGen{vBytes: []byte{0x00, 0x0f}},
+				field:  TCPOptionMss,
+				values: tamperValues{vBytes: []byte{0x00, 0x0f}},
 			},
 			wantErr: false,
 		}, {
@@ -62,8 +64,8 @@ func TestParseTamperAction(t *testing.T) {
 					Mode:     TamperReplace,
 					Action:   &SendAction{},
 				},
-				field:    IPv4FieldTTL,
-				valueGen: &tamperReplaceGen{vUint: 15},
+				field:  IPv4FieldTTL,
+				values: tamperValues{vUint: 15},
 			},
 			wantErr: false,
 		},
@@ -85,13 +87,116 @@ func TestParseTamperAction(t *testing.T) {
 	}
 }
 
+func TestParseTamperActionRejectsMalformedModes(t *testing.T) {
+	t.Parallel()
+
+	for _, rule := range []string{
+		"tamper{TCP:seq:replace}",
+		"tamper{TCP:seq:corrupt:1}",
+		"tamper{TCP:seq}",
+	} {
+		rule := rule
+		t.Run(rule, func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseTamperAction(scanner.NewScanner(rule))
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestTamperApplySerializesChanges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		rule   string
+		verify func(*testing.T, gopacket.Packet)
+	}{
+		{
+			name: "TCP sequence",
+			rule: "tamper{TCP:seq:replace:42}",
+			verify: func(t *testing.T, packet gopacket.Packet) {
+				tcp, ok := packet.TransportLayer().(*layers.TCP)
+				require.True(t, ok)
+				assert.Equal(t, uint32(42), tcp.Seq)
+			},
+		},
+		{
+			name: "TCP payload",
+			rule: "tamper{TCP:load:replace:changed}",
+			verify: func(t *testing.T, packet gopacket.Packet) {
+				tcp, ok := packet.TransportLayer().(*layers.TCP)
+				require.True(t, ok)
+				assert.Equal(t, []byte("changed"), tcp.Payload)
+				ip := packet.NetworkLayer().(*layers.IPv4) //nolint:forcetypeassert
+				assert.Equal(t, int(ip.Length), len(ip.Contents)+len(ip.Payload))
+			},
+		},
+		{
+			name: "IPv4 TTL",
+			rule: "tamper{IP:ttl:replace:9}",
+			verify: func(t *testing.T, packet gopacket.Packet) {
+				ip, ok := packet.NetworkLayer().(*layers.IPv4)
+				require.True(t, ok)
+				assert.Equal(t, uint8(9), ip.TTL)
+			},
+		},
+		{
+			name: "IPv4 checksum",
+			rule: "tamper{IP:checksum:replace:1}",
+			verify: func(t *testing.T, packet gopacket.Packet) {
+				ip, ok := packet.NetworkLayer().(*layers.IPv4)
+				require.True(t, ok)
+				assert.Equal(t, uint16(1), ip.Checksum)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			action, err := ParseTamperAction(scanner.NewScanner(test.rule))
+			require.NoError(t, err)
+			result, err := action.Apply(testPkt())
+			require.NoError(t, err)
+			require.Len(t, result, 1)
+			test.verify(t, result[0])
+		})
+	}
+}
+
+func TestCorruptTamperConcurrentApply(t *testing.T) {
+	t.Parallel()
+
+	action, err := ParseTamperAction(scanner.NewScanner("tamper{TCP:seq:corrupt}"))
+	require.NoError(t, err)
+
+	const workers = 64
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, applyErr := action.Apply(testPkt())
+			errs <- applyErr
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for applyErr := range errs {
+		require.NoError(t, applyErr)
+	}
+}
+
 func TestTamperTCP(t *testing.T) {
 	t.Parallel()
 
 	type args struct {
-		tcp      *layers.TCP
-		field    TCPField
-		valueGen tamperValueGen
+		tcp    *layers.TCP
+		field  TCPField
+		values tamperValues
 	}
 
 	//nolint:forcetypeassert
@@ -103,9 +208,9 @@ func TestTamperTCP(t *testing.T) {
 		{
 			name: "tcp tamper replace existing option",
 			args: args{
-				tcp:      testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
-				field:    TCPOptionMss,
-				valueGen: &tamperReplaceGen{vBytes: []byte{0x0f, 0xff}},
+				tcp:    testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
+				field:  TCPOptionMss,
+				values: tamperValues{vBytes: []byte{0x0f, 0xff}},
 			},
 			want: []byte{
 				0x30, 0x39, 0xd4, 0x31, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0x00,
@@ -115,9 +220,9 @@ func TestTamperTCP(t *testing.T) {
 		}, {
 			name: "tcp tamper replace missing option",
 			args: args{
-				tcp:      testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
-				field:    TCPOptionAltCkhsum,
-				valueGen: &tamperReplaceGen{vBytes: []byte{0xff, 0xff, 0xff}},
+				tcp:    testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
+				field:  TCPOptionAltCkhsum,
+				values: tamperValues{vBytes: []byte{0xff, 0xff, 0xff}},
 			},
 			want: []byte{
 				0x30, 0x39, 0xd4, 0x31, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0x00,
@@ -129,7 +234,7 @@ func TestTamperTCP(t *testing.T) {
 			args: args{
 				tcp:   testPkt().Layer(layers.LayerTypeTCP).(*layers.TCP),
 				field: TCPLoad,
-				valueGen: &tamperReplaceGen{
+				values: tamperValues{
 					vBytes: []byte{
 						0x6d, 0x69, 0x73, 0x73, 0x20, 0x79, 0x6f, 0x75, 0x20, 0x46, 0x61, 0x77, 0x6b, 0x73,
 					},
@@ -147,7 +252,7 @@ func TestTamperTCP(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			tamperTCP(tt.args.tcp, tt.args.field, tt.args.valueGen)
+			assert.NoError(t, tamperTCP(tt.args.tcp, tt.args.field, tt.args.values))
 
 			got := append([]byte{}, tt.args.tcp.Contents...)
 			got = append(got, tt.args.tcp.Payload...)
@@ -166,4 +271,119 @@ func testPkt() gopacket.Packet {
 	}
 
 	return gopacket.NewPacket(tcpBytes, layers.LinkTypeEthernet, gopacket.Default)
+}
+
+// TestTamperValuesCorruptFullRange is a regression test: the corrupt generator previously used
+// Intn(1<<bitSize-1), which both overflowed on 32-bit builds for bitSize 32 and could never
+// emit the field's maximum value. It must now produce every value in [0, 2^bitSize-1].
+func TestTamperValuesCorruptFullRange(t *testing.T) {
+	t.Parallel()
+
+	const draws = 100000
+
+	v := tamperValues{corrupt: true}
+	var ones, zeros [32]bool
+	var min, max uint32 = 0xffffffff, 0
+	for range draws {
+		got := v.uint(32)
+		if got < min {
+			min = got
+		}
+		if got > max {
+			max = got
+		}
+		for b := range ones {
+			if got&(1<<uint(b)) != 0 {
+				ones[b] = true
+			} else {
+				zeros[b] = true
+			}
+		}
+	}
+
+	// Every bit is reachable as both 0 and 1, so the generator spans the full width of the
+	// field (the old Intn-based implementation could never set bit 31 on 32-bit builds). With
+	// 100k draws the exact endpoints 0 and 0xffffffff are not guaranteed, but the extremes
+	// must land within 2^20 of them.
+	for b := range ones {
+		if !ones[b] || !zeros[b] {
+			t.Fatalf("bit %d not reachable as both 0 and 1 after %d draws", b, draws)
+		}
+	}
+	if min >= 1<<20 {
+		t.Errorf("minimum drawn value = %#x, generator not reaching low values", min)
+	}
+	if max <= 0xffffffff-(1<<20) {
+		t.Errorf("maximum drawn value = %#x, generator not reaching high values", max)
+	}
+
+	// Sub-word bit sizes must be masked to exactly the requested width.
+	for _, bitSize := range []int{1, 4, 12, 20, 24, 31} {
+		limit := uint32(1) << uint(bitSize)
+		for range 1000 {
+			if got := v.uint(bitSize); got >= limit {
+				t.Fatalf("uint(%d) = %#x, exceeds %#x", bitSize, got, limit-1)
+			}
+		}
+	}
+}
+
+func TestTamperValuesCorruptBytes(t *testing.T) {
+	t.Parallel()
+
+	v := tamperValues{corrupt: true}
+
+	// Lengths up to 20 are honored exactly.
+	for _, n := range []int{0, 1, 8, 20} {
+		if got := len(v.bytes(n)); got != n {
+			t.Errorf("len(bytes(%d)) = %d", n, got)
+		}
+	}
+
+	// Lengths over 20 get a random length in [0, n).
+	var sawShort bool
+	for range 100 {
+		if got := len(v.bytes(64)); got < 64 {
+			sawShort = true
+			break
+		}
+	}
+	if !sawShort {
+		t.Error("bytes(64) never produced a shortened random length")
+	}
+}
+
+// TestTCPDerivedFieldPolicy locks the tamper dependent-field policy: every known TCP field must
+// be classified exactly once, so that adding a new enum member forces an explicit decision
+// instead of silently emitting stale lengths.
+func TestTCPDerivedFieldPolicy(t *testing.T) {
+	t.Parallel()
+
+	options := []TCPField{
+		TCPOptionEol, TCPOptionNop, TCPOptionMss, TCPOptionWscale,
+		TCPOptionSackok, TCPOptionSack, TCPOptionTimestamp,
+		TCPOptionAltCkhsum, TCPOptionMd5Header, TCPOptionUto,
+	}
+	for _, f := range options {
+		if !tcpFieldIsOption(f) {
+			t.Errorf("field %d should be classified as a TCP option", f)
+		}
+		if !tcpAffectsIPLength(f) {
+			t.Errorf("option %d changes the TCP header size and thus the IP length", f)
+		}
+	}
+
+	plainFields := []TCPField{
+		TCPFieldSrcPort, TCPFieldDstPort, TCPFieldSeq, TCPFieldAck, TCPFieldDataOff,
+		TCPFieldFlags, TCPFieldWindow, TCPFieldUrgent, TCPFieldChecksum, TCPLoad,
+	}
+	for _, f := range plainFields {
+		if tcpFieldIsOption(f) {
+			t.Errorf("field %d should not be classified as a TCP option", f)
+		}
+		wantLengthImpact := f == TCPLoad
+		if tcpAffectsIPLength(f) != wantLengthImpact {
+			t.Errorf("field %d tcpAffectsIPLength = %t, expected %t", f, tcpAffectsIPLength(f), wantLengthImpact)
+		}
+	}
 }

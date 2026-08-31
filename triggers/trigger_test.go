@@ -1,12 +1,16 @@
 package triggers_test
 
 import (
+	"encoding/binary"
 	"fmt"
 	"reflect"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 
 	"github.com/getlantern/geneva/internal/scanner"
 	"github.com/getlantern/geneva/triggers"
@@ -123,6 +127,135 @@ func TestTriggersWithGas(t *testing.T) {
 			}
 		})
 	}
+}
+
+// These cases are ported from the canonical Python trigger tests. Positive
+// gas is bounded-fire, zero is exhausted, and negative gas is a bomb that
+// starts firing only after the configured number of matching packets.
+func TestTriggerGasControlsMatches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		dna     string
+		matches []bool
+	}{
+		{name: "unlimited", dna: "[TCP:flags:SA]", matches: []bool{true, true, true}},
+		{name: "one shot", dna: "[TCP:flags:SA:1]", matches: []bool{true, false, false}},
+		{name: "exhausted", dna: "[TCP:flags:SA:0]", matches: []bool{false, false, false}},
+		{name: "one match bomb", dna: "[TCP:flags:SA:-1]", matches: []bool{false, true, true}},
+		{name: "three match bomb", dna: "[TCP:flags:SA:-3]", matches: []bool{false, false, false, true, true}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			trigger, err := triggers.ParseTrigger(scanner.NewScanner(tc.dna))
+			if err != nil {
+				t.Fatalf("ParseTrigger() got an error: %v", err)
+			}
+
+			for i, expected := range tc.matches {
+				matched, err := trigger.Matches(tcpPacket(0x12))
+				if err != nil {
+					t.Fatalf("Matches() call %d got an error: %v", i, err)
+				}
+				if matched != expected {
+					t.Errorf("Matches() call %d = %t, expected %t", i, matched, expected)
+				}
+			}
+
+			if got := trigger.String(); got != tc.dna {
+				t.Errorf("runtime gas changed serialized DNA: got %q, expected %q", got, tc.dna)
+			}
+		})
+	}
+}
+
+func TestTriggerGasOnlyConsumesMatchingPackets(t *testing.T) {
+	t.Parallel()
+
+	trigger, err := triggers.ParseTrigger(scanner.NewScanner("[TCP:flags:SA:1]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	matched, err := trigger.Matches(tcpPacket(0x04))
+	if err != nil || matched {
+		t.Fatalf("nonmatching RST packet consumed or fired trigger: matched=%t err=%v", matched, err)
+	}
+	matched, err = trigger.Matches(tcpPacket(0x12))
+	if err != nil || !matched {
+		t.Fatalf("matching SYN+ACK packet did not receive remaining gas: matched=%t err=%v", matched, err)
+	}
+}
+
+func TestTriggerGasIsConcurrencySafe(t *testing.T) {
+	t.Parallel()
+
+	trigger, err := triggers.ParseTrigger(scanner.NewScanner("[TCP:flags:SA:25]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var fired atomic.Int64
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			matched, matchErr := trigger.Matches(tcpPacket(0x12))
+			if matchErr != nil {
+				t.Errorf("Matches() got an error: %v", matchErr)
+				return
+			}
+			if matched {
+				fired.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := fired.Load(); got != 25 {
+		t.Errorf("bounded trigger fired %d times, expected 25", got)
+	}
+}
+
+func TestTCPFlagsExactAndWildcardMatches(t *testing.T) {
+	t.Parallel()
+
+	exact, err := triggers.ParseTrigger(scanner.NewScanner("[TCP:flags:S]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wildcard, err := triggers.ParseTrigger(scanner.NewScanner("[TCP:flags:S*]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	matched, err := exact.Matches(tcpPacket(0x12))
+	if err != nil || matched {
+		t.Fatalf("exact SYN trigger matched SYN+ACK: matched=%t err=%v", matched, err)
+	}
+	matched, err = wildcard.Matches(tcpPacket(0x12))
+	if err != nil || !matched {
+		t.Fatalf("wildcard SYN trigger did not match SYN+ACK: matched=%t err=%v", matched, err)
+	}
+}
+
+func tcpPacket(flags byte) gopacket.Packet {
+	data := make([]byte, 40)
+	data[0] = 0x45
+	binary.BigEndian.PutUint16(data[2:4], uint16(len(data)))
+	data[8] = 64
+	data[9] = byte(layers.IPProtocolTCP)
+	copy(data[12:16], []byte{192, 0, 2, 1})
+	copy(data[16:20], []byte{198, 51, 100, 2})
+	binary.BigEndian.PutUint16(data[20:22], 12345)
+	binary.BigEndian.PutUint16(data[22:24], 443)
+	data[32] = 0x50
+	data[33] = flags
+	return gopacket.NewPacket(data, layers.LayerTypeIPv4, gopacket.Default)
 }
 
 func TestTCPStringify(t *testing.T) {
@@ -253,4 +386,129 @@ func ExampleNewTCPTrigger() {
 
 	fmt.Printf("%s", t)
 	// Output: [TCP:flags:SA]
+}
+
+// TestGasConstructorsDistinguishZero checks that the WithGas constructors interpret gas exactly
+// as given (zero never fires) and that GasConfigured distinguishes unlimited from configured.
+func TestGasConstructorsDistinguishZero(t *testing.T) {
+	t.Parallel()
+
+	zero, err := triggers.NewTCPTriggerWithGas("flags", "SA", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matched, _ := zero.Matches(tcpPacket(0x12)); matched {
+		t.Error("zero-gas trigger fired")
+	}
+	if gas, ok := zero.GasConfigured(); !ok || gas != 0 {
+		t.Errorf("zero-gas GasConfigured() = (%d, %t), expected (0, true)", gas, ok)
+	}
+
+	bomb, err := triggers.NewTCPTriggerWithGas("flags", "SA", -2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		matched, err := bomb.Matches(tcpPacket(0x12))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := i >= 2; matched != want {
+			t.Errorf("bomb Matches() call %d = %t, expected %t", i, matched, want)
+		}
+	}
+
+	unlimited, err := triggers.NewTCPTrigger("flags", "SA", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := unlimited.GasConfigured(); ok {
+		t.Error("legacy constructor with gas 0 should configure unlimited gas")
+	}
+
+	ipUnlimited, err := triggers.NewIPTrigger("ttl", "64", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ipUnlimited.GasConfigured(); ok {
+		t.Error("legacy IP trigger with gas 0 should configure unlimited gas")
+	}
+}
+
+// TestEmptyTriggerValues ports canonical Geneva's empty-value handling: "[tcp:load:]" matches
+// packets with no payload and an empty option value is a presence trigger, while an empty value
+// for any other field would be a permanently dead trigger and is rejected explicitly.
+func TestEmptyTriggerValues(t *testing.T) {
+	t.Parallel()
+
+	rejected := []string{
+		"[TCP:flags:]",
+		"[TCP:dport:]",
+		"[TCP:sport:]",
+		"[TCP:seq:]",
+		"[TCP:window:]",
+		"[IP:flags:]",
+		"[IP:ttl:]",
+		"[IP:len:]",
+	}
+	for _, dna := range rejected {
+		trigger, err := triggers.ParseTrigger(scanner.NewScanner(dna))
+		if err == nil {
+			t.Errorf("ParseTrigger(%q) = %s, expected an error for the empty value", dna, trigger)
+			continue
+		}
+		if !strings.Contains(err.Error(), "empty trigger value") {
+			t.Errorf("ParseTrigger(%q) error %q should mention the empty trigger value", dna, err)
+		}
+	}
+
+	accepted := []string{
+		"[TCP:load:]",
+		"[IP:load:]",
+		// An empty option value is a presence trigger and is legitimate for any option;
+		// canonical Geneva ships strategies like "[tcp:options-sackok:]" and "[tcp:options-sack:]".
+		"[TCP:options-sackok:]",
+		"[TCP:options-nop:]",
+		"[TCP:options-mss:]",
+		"[TCP:options-wscale:]",
+		"[TCP:options-sack:]",
+		"[TCP:options-timestamp:]",
+		// Non-empty option values with gas still parse.
+		"[TCP:options-sack:4:4]",
+	}
+	for _, dna := range accepted {
+		if _, err := triggers.ParseTrigger(scanner.NewScanner(dna)); err != nil {
+			t.Errorf("ParseTrigger(%q) got an error: %v; empty payload values are valid", dna, err)
+		}
+	}
+
+	loadTrigger, err := triggers.NewTCPTrigger("load", "", 0)
+	if err != nil {
+		t.Fatalf("NewTCPTrigger(load, \"\") got an error: %v", err)
+	}
+
+	if matched, err := loadTrigger.Matches(tcpPacket(0x10)); err != nil || !matched {
+		t.Errorf("[TCP:load:] should match a packet with no payload (matched=%t, err=%v)", matched, err)
+	}
+	if matched, err := loadTrigger.Matches(tcpPacketWithPayload("hello")); err != nil || matched {
+		t.Errorf("[TCP:load:] should not match a packet with a payload (matched=%t, err=%v)", matched, err)
+	}
+}
+
+// tcpPacketWithPayload returns a TCP packet carrying the given ASCII payload.
+func tcpPacketWithPayload(payload string) gopacket.Packet {
+	base := tcpPacket(0x10).Data()
+	data := make([]byte, len(base), len(base)+len(payload))
+	copy(data, base)
+	data = append(data, []byte(payload)...)
+
+	// The TCP header ends at offset 40 (20 bytes IP + 20 bytes TCP); bump Total Length. The
+	// length must fit the 16-bit field, so oversized payloads fail loudly instead of wrapping
+	// into an invalid packet.
+	if len(data) > 0xffff {
+		panic(fmt.Sprintf("tcpPacketWithPayload: packet too large: %d bytes", len(data)))
+	}
+	binary.BigEndian.PutUint16(data[2:4], uint16(len(data)))
+
+	return gopacket.NewPacket(data, layers.LayerTypeIPv4, gopacket.Default)
 }

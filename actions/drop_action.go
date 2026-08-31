@@ -1,6 +1,6 @@
 package actions
 
-import "github.com/google/gopacket"
+import "github.com/gopacket/gopacket"
 
 // DropAction is a Geneva action that drops a packet.
 type DropAction struct{}

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 )
 
 // IPField is the type of a supported IP field.
@@ -65,7 +65,7 @@ func ParseIPField(field string) (IPField, error) {
 type IPTrigger struct {
 	field IPField
 	value string
-	gas   int
+	gas   *triggerGas
 
 	ipField layers.IPv4Flag
 }
@@ -73,8 +73,8 @@ type IPTrigger struct {
 // String returns a string representation of this trigger.
 func (t *IPTrigger) String() string {
 	gas := ""
-	if t.gas > 0 {
-		gas = fmt.Sprintf(":%d", t.gas)
+	if value, ok := t.gas.value(); ok {
+		gas = fmt.Sprintf(":%d", value)
 	}
 
 	return fmt.Sprintf("[%s:%s:%s%s]", t.Protocol(), t.Field(), t.value, gas)
@@ -91,12 +91,33 @@ func (t *IPTrigger) Field() string {
 }
 
 // Gas denotes how many times this trigger can fire before it stops triggering.
+//
+// Gas is lossy: an unlimited trigger and a fully configured-but-exhausted one both read as 0
+// here. Use GasConfigured when the distinction matters.
 func (t *IPTrigger) Gas() int {
-	return t.gas
+	gas, _ := t.gas.value()
+	return gas
+}
+
+// GasConfigured returns the trigger's configured gas and whether a gas limit was configured at
+// all. Positive gas fires for that many matching packets, zero never fires, and negative gas is
+// a bomb that fires indefinitely after suppressing -gas matches. When configured is false the
+// trigger has unlimited gas.
+func (t *IPTrigger) GasConfigured() (int, bool) {
+	return t.gas.value()
 }
 
 // Matches returns whether the trigger matches the packet.
 func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
+	matched, err := t.matches(pkt)
+	if err != nil {
+		return false, err
+	}
+
+	return t.gas.allow(matched), nil
+}
+
+func (t *IPTrigger) matches(pkt gopacket.Packet) (bool, error) {
 	ipLayer, ok := pkt.NetworkLayer().(*layers.IPv4)
 	if !ok || ipLayer == nil {
 		// XXX currently only supports IPv4
@@ -146,8 +167,76 @@ func (t *IPTrigger) Matches(pkt gopacket.Packet) (bool, error) {
 	}
 }
 
+func (t *IPTrigger) validate() error {
+	if t == nil {
+		return fmt.Errorf("IP trigger is nil")
+	}
+
+	// An empty value is only meaningful for the payload field: canonical Geneva's
+	// "[ip:load:]" triggers on datagrams with no payload at all. For every other field an
+	// empty value would be a permanently dead trigger, so reject it explicitly rather than
+	// letting it fail later with a confusing parse error (or silently never fire).
+	if t.value == "" && t.field != IPFieldPayload {
+		return fmt.Errorf("IP field %q has an empty trigger value", t.Field())
+	}
+
+	switch t.field {
+	case IPFieldFlags:
+		if t.value == "" {
+			return fmt.Errorf("IP flags value is empty")
+		}
+		for _, flag := range strings.Split(t.value, "+") {
+			switch strings.ToLower(flag) {
+			case "mf", "df", "evil":
+			default:
+				return fmt.Errorf("unknown IP flag %q", flag)
+			}
+		}
+		return nil
+	case IPFieldSourceAddress, IPFieldDestAddress:
+		ip := net.ParseIP(t.value)
+		if ip == nil || ip.To4() == nil {
+			return fmt.Errorf("%q is not an IPv4 address", t.value)
+		}
+		return nil
+	case IPFieldPayload:
+		return nil
+	}
+
+	bits := 16
+	switch t.field {
+	case IPFieldVersion, IPFieldIHL, IPFieldTOS, IPFieldTTL, IPFieldProtocol:
+		bits = 8
+	}
+	if _, err := strconv.ParseUint(t.value, 0, bits); err != nil {
+		return fmt.Errorf("invalid value %q for IP field %q: %w", t.value, t.Field(), err)
+	}
+
+	return nil
+}
+
 // NewIPTrigger creates a new IP trigger.
+//
+// For compatibility with earlier versions of this package, a gas of 0 means the
+// trigger has unlimited gas; it will fire for every matching packet. To create
+// a trigger with zero gas (one that never fires), parse "[IP:field:value:0]"
+// with ParseTrigger or strategy.ParseStrategy, or call NewIPTriggerWithGas.
 func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
+	if gas == 0 {
+		return newIPTrigger(field, value, nil)
+	}
+
+	return newIPTrigger(field, value, &gas)
+}
+
+// NewIPTriggerWithGas creates a new IP trigger whose gas is interpreted exactly as given:
+// positive gas fires for that many matching packets, zero never fires, and negative gas is a
+// bomb that fires indefinitely after suppressing -gas matches.
+func NewIPTriggerWithGas(field, value string, gas int) (*IPTrigger, error) {
+	return newIPTrigger(field, value, &gas)
+}
+
+func newIPTrigger(field, value string, gas *int) (*IPTrigger, error) {
 	if field == "" {
 		return nil, fmt.Errorf("cannot create IP trigger with empty field")
 	}
@@ -157,7 +246,7 @@ func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
 		return nil, fmt.Errorf("failed to parse IP field: %w", err)
 	}
 
-	trigger := &IPTrigger{f, value, gas, 0}
+	trigger := &IPTrigger{field: f, value: value, gas: newTriggerGas(gas)}
 
 	if f == IPFieldFlags {
 		// The original Geneva project heavily relies on Scapy for processing. Due to this,
@@ -173,6 +262,10 @@ func NewIPTrigger(field, value string, gas int) (*IPTrigger, error) {
 				trigger.ipField |= layers.IPv4EvilBit
 			}
 		}
+	}
+
+	if err := trigger.validate(); err != nil {
+		return nil, fmt.Errorf("failed to create trigger: %w", err)
 	}
 
 	return trigger, nil

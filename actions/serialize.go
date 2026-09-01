@@ -55,5 +55,10 @@ func serializeTamperedPacket(
 		return nil, err
 	}
 
-	return gopacket.NewPacket(buffer.Bytes(), layers[0].LayerType(), gopacket.Default), nil
+	// NoCopy: the serialize buffer was allocated here and is not reused, so the
+	// packet may alias it instead of taking a second copy of every byte. Lazy:
+	// the caller of a tampered packet usually just serializes it back out, so
+	// eagerly re-decoding every layer is work for nobody.
+	return gopacket.NewPacket(buffer.Bytes(), layers[0].LayerType(),
+		gopacket.DecodeOptions{Lazy: true, NoCopy: true}), nil
 }

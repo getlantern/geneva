@@ -774,8 +774,9 @@ func tamperIPv4(ip *layers.IPv4, field IPv4Field, values tamperValues) error {
 	if err := ip.SerializeTo(sb, gopacket.SerializeOptions{}); err != nil {
 		return err
 	}
-	ip.Contents = make([]byte, len(sb.Bytes()))
-	copy(ip.Contents, sb.Bytes())
+	// Reuse the existing header buffer rather than allocating a new one per
+	// packet, as the TCP path above already does.
+	ip.Contents = append(ip.Contents[:0], sb.Bytes()...)
 
 	return nil
 }
